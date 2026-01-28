@@ -209,15 +209,23 @@ def validate_password_strength(password):
         return "Password is required."
     if len(password) < 8:
         return "Password must be at least 8 characters."
-    if not re.search(r"[a-z]", password):
-        return "Password must include a lowercase letter."
-    if not re.search(r"[A-Z]", password):
-        return "Password must include an uppercase letter."
-    if not re.search(r"[0-9]", password):
-        return "Password must include a number."
-    if not re.search(r"[^A-Za-z0-9]", password):
-        return "Password must include a special character."
+    if re.search(r"(.)\1\1", password):
+        return "Password cannot contain more than 2 identical characters in a row."
+
+    category_count = 0
+    if re.search(r"[a-z]", password):
+        category_count += 1
+    if re.search(r"[A-Z]", password):
+        category_count += 1
+    if re.search(r"[0-9]", password):
+        category_count += 1
+    if re.search(r"[^A-Za-z0-9]", password):
+        category_count += 1
+    if category_count < 3:
+        return "Password must include at least 3 of: lowercase, uppercase, numbers, special characters."
     return None
+
+
 
 
 def set_site_message(message, level="warning"):
@@ -734,12 +742,17 @@ def signup():
             phone = request.form['phone']
             password1 = request.form['password1']
             password2 = request.form['password2']
+            human_verify = request.form.get('humanVerify')
 
 	     
             strength_error = validate_password_strength(password1)
             if strength_error:
                 return render_template('signup.html', error=strength_error)
-            elif password1 != password2:
+
+            if not human_verify:
+                return render_template('signup.html', error='Please confirm you are human to continue.')
+
+            if password1 != password2:
                 return render_template('signup.html', error='Password Do Not Match')           
             else:
                 connection = get_db_connection()
@@ -770,7 +783,7 @@ def signup():
                         mailer.send_email(email, subject, text_body, html_body)
                 except Exception:
                     pass
-                return render_template('signin.html', success='Registered Successfully, You can Signin Now')
+        return render_template('signin.html', success='Registered Successfully, You can Signin Now')
         
     else:
         return render_template('signup.html')
