@@ -485,6 +485,27 @@
       {% endif %}
     </div>
   </section>
+
+  {% if not session.get('key') %}
+  <div class="modal fade" id="signinPromptModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">Sign in to continue</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          Create an account or sign in to save your cart and leave reviews.
+        </div>
+        <div class="modal-footer">
+          <a class="btn btn-outline-secondary" href="/signup">Create account</a>
+          <a class="btn btn-primary" href="/signin">Sign in</a>
+        </div>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
   <a
     class="whatsapp-float"
     href="https://wa.me/254759808915"
@@ -617,5 +638,35 @@
     });
   });
 </script>
+{% if not session.get('key') %}
+<script>
+  document.addEventListener("DOMContentLoaded", () => {
+    const path = window.location.pathname || "/";
+    if (path === "/signin" || path === "/signup") return;
+    const productPages = [
+      "/",
+      "/categories",
+      "/category/",
+      "/single_item/",
+      "/flash-sales",
+      "/search"
+    ];
+    const isProductPage = productPages.some((p) => (p.endsWith("/") ? path.startsWith(p) : path === p));
+    if (!isProductPage) return;
+
+    const lastPrompt = sessionStorage.getItem("signinPromptShown");
+    if (lastPrompt === "yes") return;
+
+    const modalEl = document.getElementById("signinPromptModal");
+    if (!modalEl || typeof bootstrap === "undefined") return;
+
+    setTimeout(() => {
+      const modal = new bootstrap.Modal(modalEl, { backdrop: "static" });
+      modal.show();
+      sessionStorage.setItem("signinPromptShown", "yes");
+    }, 6000);
+  });
+</script>
+{% endif %}
 </body>
 </html>
