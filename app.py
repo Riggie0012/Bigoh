@@ -1,5 +1,5 @@
 from flask import *
-from urllib.parse import quote
+from urllib.parse import quote, urlparse, parse_qs
 import re
 import os
 import json
@@ -58,24 +58,78 @@ def image_url(path):
 
     return url_for("static", filename=path)
 
+def _parse_db_url(db_url: str) -> dict:
+    parsed = urlparse(db_url)
+    if parsed.scheme not in {"mysql", "mariadb"}:
+        raise ValueError("Unsupported database URL scheme")
+    database = parsed.path.lstrip("/")
+    query = parse_qs(parsed.query)
+    return {
+        "host": parsed.hostname,
+        "user": parsed.username,
+        "password": parsed.password,
+        "database": database,
+        "port": parsed.port or 3306,
+        "query": query,
+    }
+
+
 def get_db_connection():
-    host = os.getenv("DB_HOST")
-    user = os.getenv("DB_USER")
-    password = os.getenv("DB_PASSWORD")
-    database = os.getenv("DB_NAME")
-    port = int(os.getenv("DB_PORT", "3306"))
-    return pymysql.connect(
+    db_url = os.getenv("DATABASE_URL") or os.getenv("MYSQL_URL") or os.getenv("DB_URL")
+    if db_url:
+        try:
+            cfg = _parse_db_url(db_url)
+        except Exception as exc:
+            raise RuntimeError(f"Invalid DATABASE_URL/MYSQL_URL: {exc}") from exc
+        host = cfg["host"]
+        user = cfg["user"]
+        password = cfg["password"]
+        database = cfg["database"]
+        port = int(cfg["port"])
+        query = cfg["query"]
+    else:
+        host = os.getenv("DB_HOST")
+        user = os.getenv("DB_USER")
+        password = os.getenv("DB_PASSWORD")
+        database = os.getenv("DB_NAME")
+        port = int(os.getenv("DB_PORT", "3306"))
+        query = {}
+
+    if not host:
+        raise RuntimeError("Database host is not set (DB_HOST or DATABASE_URL).")
+
+    ssl_disabled = os.getenv("DB_SSL_DISABLED", "0") == "1"
+    sslmode = (query.get("sslmode") or [""])[0].lower()
+    ssl_query = (query.get("ssl") or [""])[0].lower()
+    if sslmode == "disable" or ssl_query in {"0", "false", "no"}:
+        ssl_disabled = True
+
+    connect_kwargs = dict(
         host=host,
         user=user,
         password=password,
         database=database,
         port=port,
-        ssl={"ssl": {}},           # <-- IMPORTANT for Railway proxy
         connect_timeout=10,
         read_timeout=10,
         write_timeout=10,
         cursorclass=pymysql.cursors.DictCursor,
     )
+    if not ssl_disabled:
+        connect_kwargs["ssl"] = {"ssl": {}}
+
+    try:
+        return pymysql.connect(**connect_kwargs)
+    except pymysql.err.OperationalError as exc:
+        hint = ""
+        if host.endswith(".railway.internal"):
+            hint = (
+                " The host looks like a Railway internal address. "
+                "Use the public MySQL host/port (or DATABASE_URL) when deploying outside Railway."
+            )
+        raise pymysql.err.OperationalError(
+            exc.args[0], f"{exc.args[1]}{hint}"
+        ) from exc
 
 
 def _scalar(cur, query, params=None, default=0):
