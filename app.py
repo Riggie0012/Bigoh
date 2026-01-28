@@ -737,52 +737,51 @@ def add_product_review(product_id):
 @app.route('/signup', methods=['POST', 'GET'])
 def signup():
     if request.method == 'POST':
-            username = request.form['username']
-            email = request.form['email']
-            phone = request.form['phone']
-            password1 = request.form['password1']
-            password2 = request.form['password2']
-            human_verify = request.form.get('humanVerify')
+        username = request.form['username']
+        email = request.form['email']
+        phone = request.form['phone']
+        password1 = request.form['password1']
+        password2 = request.form['password2']
+        human_verify = request.form.get('humanVerify')
 
-	     
-            strength_error = validate_password_strength(password1)
-            if strength_error:
-                return render_template('signup.html', error=strength_error)
+        strength_error = validate_password_strength(password1)
+        if strength_error:
+            return render_template('signup.html', error=strength_error)
 
-            if not human_verify:
-                return render_template('signup.html', error='Please confirm you are human to continue.')
+        if not human_verify:
+            return render_template('signup.html', error='Please confirm you are human to continue.')
 
-            if password1 != password2:
-                return render_template('signup.html', error='Password Do Not Match')           
-            else:
-                connection = get_db_connection()
-					     
-                hashed_password = generate_password_hash(password1)
+        if password1 != password2:
+            return render_template('signup.html', error='Password Do Not Match')
 
-                if users_has_is_admin():
-                    sql = ''' 
-                         insert into users(username, password, email, phone, is_admin) 
-                         values(%s, %s, %s, %s, %s)
-                     '''
-                    cursor = connection.cursor()
-                    cursor.execute(sql, (username, hashed_password, email, phone, 0))
-                else:
-                    sql = ''' 
-                         insert into users(username, password, email, phone) 
-                         values(%s, %s, %s, %s)
-                     '''
-                    cursor = connection.cursor()
-                    cursor.execute(sql, (username, hashed_password, email, phone))
-		
-                connection.commit()
-                import sms
-                sms.send_sms(phone, "Thank you for Registering")
-                try:
-                    if email and "@" in email:
-                        subject, text_body, html_body = mailer.build_signup_email(username)
-                        mailer.send_email(email, subject, text_body, html_body)
-                except Exception:
-                    pass
+        connection = get_db_connection()
+
+        hashed_password = generate_password_hash(password1)
+
+        if users_has_is_admin():
+            sql = ''' 
+                 insert into users(username, password, email, phone, is_admin) 
+                 values(%s, %s, %s, %s, %s)
+             '''
+            cursor = connection.cursor()
+            cursor.execute(sql, (username, hashed_password, email, phone, 0))
+        else:
+            sql = ''' 
+                 insert into users(username, password, email, phone) 
+                 values(%s, %s, %s, %s)
+             '''
+            cursor = connection.cursor()
+            cursor.execute(sql, (username, hashed_password, email, phone))
+
+        connection.commit()
+        import sms
+        sms.send_sms(phone, "Thank you for Registering")
+        try:
+            if email and "@" in email:
+                subject, text_body, html_body = mailer.build_signup_email(username)
+                mailer.send_email(email, subject, text_body, html_body)
+        except Exception:
+            pass
         return render_template('signin.html', success='Registered Successfully, You can Signin Now')
         
     else:
