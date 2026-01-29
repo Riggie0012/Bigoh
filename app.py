@@ -313,7 +313,7 @@ def validate_email_format(email: str) -> bool:
 def normalize_phone_number(phone: str) -> str:
     if not phone:
         return ""
-    cleaned = re.sub(r"[\\s\\-().]", "", phone)
+    cleaned = re.sub(r"[\s\-().]", "", phone)
     if cleaned.startswith("+"):
         digits = cleaned[1:]
         prefix = "+"
@@ -519,7 +519,7 @@ def _random_password() -> str:
 
 def _unique_username_from_email(conn, email: str) -> str:
     base = (email.split("@", 1)[0] or "user").strip().lower()
-    base = re.sub(r"[^a-z0-9_\\.\\-]", "", base) or "user"
+    base = re.sub(r"[^a-z0-9_.-]", "", base) or "user"
     candidate = base
     with conn.cursor() as cur:
         suffix = 0
@@ -1648,60 +1648,6 @@ def signin():
                 session["is_admin"] = bool(user[5]) or (user[1] in ADMIN_USERS)
             else:
                 session["is_admin"] = (user[1] in ADMIN_USERS)
-
-            # Send verification reminders without blocking sign-in.
-            try:
-                reminder_conn = get_db_connection()
-                ensure_user_verification_schema(reminder_conn)
-                verification = get_verification_state(reminder_conn, user_id)
-                if not verification.get("email_verified") or not verification.get("phone_verified"):
-                    now = _now_utc()
-                    with reminder_conn.cursor() as ver_cur:
-                        ensure_user_verification_row(ver_cur, user_id)
-                        email_token = None
-                        phone_otp = None
-                        if not verification.get("email_verified") and validate_email_format(user_email or ""):
-                            email_token = generate_email_token()
-                            update_user_verification(
-                                ver_cur,
-                                user_id,
-                                {
-                                    "email_token": email_token,
-                                    "email_token_expires": now + EMAIL_TOKEN_TTL,
-                                    "email_sent_at": now,
-                                },
-                            )
-                        if not verification.get("phone_verified") and validate_phone_number(user_phone or ""):
-                            phone_otp = generate_phone_otp()
-                            update_user_verification(
-                                ver_cur,
-                                user_id,
-                                {
-                                    "phone_otp": phone_otp,
-                                    "phone_otp_expires": now + PHONE_OTP_TTL,
-                                    "phone_sent_at": now,
-                                    "phone_otp_attempts": 0,
-                                },
-                            )
-                    reminder_conn.commit()
-                    try:
-                        if email_token:
-                            send_email_verification(user_name, user_email, email_token)
-                    except Exception:
-                        pass
-                    try:
-                        if phone_otp:
-                            send_phone_otp_sms(user_phone, phone_otp)
-                    except Exception:
-                        pass
-                    set_site_message("Please verify your email and phone when you can.", "info")
-            except Exception:
-                pass
-            finally:
-                try:
-                    reminder_conn.close()
-                except Exception:
-                    pass
 
             send_login_notifications(user_name, user_email, user_phone)
 
