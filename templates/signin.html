@@ -129,6 +129,16 @@
             padding: 10px 12px;
             font-weight: 600;
         }
+        .btn-alt.google-btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+        .btn-alt.google-btn img {
+            width: 18px;
+            height: 18px;
+        }
         .muted { color: var(--muted); }
         .link { color: var(--accent-dark); text-decoration: none; font-weight: 600; }
         .auth-footer { font-size: 0.9rem; }
@@ -200,7 +210,10 @@
 
                      <div class="row g-2">
                          <div class="col-6">
-                             <button type="button" class="btn-alt w-100" id="googleSignInBtn">Google</button>
+                             <button type="button" class="btn-alt w-100 google-btn" id="googleSignInBtn">
+                                 <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google">
+                                 Google
+                             </button>
                          </div>
                          <div class="col-6">
                              <a class="btn-alt w-100 d-inline-block text-center" href="/forgot-password">SMS login</a>
