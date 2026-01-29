@@ -14,7 +14,7 @@ def main():
     host = os.getenv("DB_HOST", "localhost")
     user = os.getenv("DB_USER", "root")
     password = os.getenv("DB_PASSWORD", "")
-    database = os.getenv("DB_NAME", "zenithcartdb")
+    database = os.getenv("DB_NAME", "Bigohdb")
     port = int(os.getenv("DB_PORT", "3306"))
 
     conn = pymysql.connect(host=host, user=user, password=password, database=database, port=port)
@@ -42,3 +42,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
