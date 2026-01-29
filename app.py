@@ -1964,7 +1964,9 @@ def search_suggestions():
     if len(q) < 2:
         return jsonify([])
 
-    like = f"%{q}%"
+    q_lower = q.lower()
+    like = f"%{q_lower}%"
+    prefix = f"{q_lower}%"
     conn = get_db_connection()
     try:
         with conn.cursor() as cur:
@@ -1972,13 +1974,39 @@ def search_suggestions():
                 """
                 SELECT product_id, product_name, category, brand, price, stock, description, image_url
                 FROM products
-                WHERE product_name LIKE %s
-                   OR category LIKE %s
-                   OR brand LIKE %s
-                ORDER BY product_id DESC
+                WHERE LOWER(product_name) LIKE %s
+                   OR LOWER(category) LIKE %s
+                   OR LOWER(brand) LIKE %s
+                   OR LOWER(description) LIKE %s
+                   OR SOUNDEX(product_name) = SOUNDEX(%s)
+                   OR SOUNDEX(brand) = SOUNDEX(%s)
+                ORDER BY
+                  CASE
+                    WHEN LOWER(product_name) = %s THEN 6
+                    WHEN LOWER(product_name) LIKE %s THEN 5
+                    WHEN LOWER(brand) = %s THEN 4
+                    WHEN LOWER(brand) LIKE %s THEN 3
+                    WHEN LOWER(category) LIKE %s THEN 2
+                    WHEN LOWER(description) LIKE %s THEN 1
+                    ELSE 0
+                  END DESC,
+                  product_id DESC
                 LIMIT 8
                 """,
-                (like, like, like),
+                (
+                    like,
+                    like,
+                    like,
+                    like,
+                    q_lower,
+                    q_lower,
+                    q_lower,
+                    prefix,
+                    q_lower,
+                    prefix,
+                    like,
+                    like,
+                ),
             )
             rows = cur.fetchall() or []
     finally:
@@ -2014,8 +2042,25 @@ def _tokenize_search(raw_query):
     return cleaned
 
 
+def _expand_synonyms(term: str) -> list:
+    synonyms = {
+        "jersey": ["kit", "football shirt", "soccer jersey"],
+        "kit": ["jersey", "football shirt", "soccer jersey"],
+        "watch": ["wristwatch", "timepiece"],
+        "watches": ["watch", "wristwatch", "timepiece"],
+        "ladies": ["women", "female"],
+        "men": ["male", "gents"],
+        "cleaning": ["cleaner", "cleaners", "detergent"],
+        "sneakers": ["shoes", "trainers"],
+        "shoes": ["sneakers", "trainers"],
+    }
+    key = term.lower()
+    return synonyms.get(key, [])
+
+
 def advanced_product_search(raw_query):
     tokens = _tokenize_search(raw_query)
+    raw_lower = raw_query.strip().lower()
 
     general_terms = []
     name_terms = []
@@ -2076,54 +2121,87 @@ def advanced_product_search(raw_query):
     score_parts = []
     score_params = []
 
-    def add_like(field, term, weight):
-        like = f"%{term}%"
-        score_parts.append(f"CASE WHEN {field} LIKE %s THEN {weight} ELSE 0 END")
-        score_params.append(like)
+    def add_score(expr, term, weight, like=False):
+        if like:
+            score_parts.append(f"CASE WHEN {expr} LIKE %s THEN {weight} ELSE 0 END")
+            score_params.append(term)
+        else:
+            score_parts.append(f"CASE WHEN {expr} = %s THEN {weight} ELSE 0 END")
+            score_params.append(term)
+
+    def add_soundex_score(field, term, weight):
+        score_parts.append(f"CASE WHEN SOUNDEX({field}) = SOUNDEX(%s) THEN {weight} ELSE 0 END")
+        score_params.append(term)
+
+    def add_term_group(term, weight_scale=1.0):
+        variants = [term] + _expand_synonyms(term)
+        term_clauses = []
+        for v in variants:
+            v = v.strip().lower()
+            if not v:
+                continue
+            like = f"%{v}%"
+            term_clauses.append(
+                "(LOWER(p.product_name) LIKE %s OR LOWER(p.category) LIKE %s OR LOWER(p.brand) LIKE %s OR LOWER(p.description) LIKE %s "
+                "OR SOUNDEX(p.product_name)=SOUNDEX(%s) OR SOUNDEX(p.brand)=SOUNDEX(%s) OR SOUNDEX(p.category)=SOUNDEX(%s))"
+            )
+            where_params.extend([like, like, like, like, v, v, v])
+
+            w = weight_scale
+            add_score("LOWER(p.product_name)", v, int(28 * w))
+            add_score("LOWER(p.brand)", v, int(18 * w))
+            add_score("LOWER(p.category)", v, int(14 * w))
+            add_score("LOWER(p.product_name)", f"{v}%", int(20 * w), like=True)
+            add_score("LOWER(p.brand)", f"{v}%", int(12 * w), like=True)
+            add_score("LOWER(p.category)", f"{v}%", int(9 * w), like=True)
+            add_score("LOWER(p.product_name)", f"%{v}%", int(9 * w), like=True)
+            add_score("LOWER(p.brand)", f"%{v}%", int(6 * w), like=True)
+            add_score("LOWER(p.category)", f"%{v}%", int(4 * w), like=True)
+            add_score("LOWER(p.description)", f"%{v}%", int(2 * w), like=True)
+            add_soundex_score("p.product_name", v, int(4 * w))
+            add_soundex_score("p.brand", v, int(3 * w))
+            add_soundex_score("p.category", v, int(2 * w))
+        if term_clauses:
+            where_parts.append("(" + " OR ".join(term_clauses) + ")")
 
     for term in general_terms:
-        like = f"%{term}%"
-        where_parts.append(
-            "(product_name LIKE %s OR category LIKE %s OR brand LIKE %s OR description LIKE %s)"
-        )
-        where_params.extend([like, like, like, like])
-        add_like("product_name", term, 5)
-        add_like("brand", term, 3)
-        add_like("category", term, 2)
-        add_like("description", term, 1)
+        add_term_group(term, 1.0)
 
     for term in name_terms:
-        like = f"%{term}%"
-        where_parts.append("product_name LIKE %s")
-        where_params.append(like)
-        add_like("product_name", term, 6)
+        add_term_group(term, 1.2)
 
     for term in brand_terms:
-        like = f"%{term}%"
-        where_parts.append("brand LIKE %s")
-        where_params.append(like)
-        add_like("brand", term, 5)
+        add_term_group(term, 1.1)
 
     for term in category_terms:
-        like = f"%{term}%"
-        where_parts.append("category LIKE %s")
-        where_params.append(like)
-        add_like("category", term, 4)
+        add_term_group(term, 1.05)
 
     for term in desc_terms:
-        like = f"%{term}%"
-        where_parts.append("description LIKE %s")
-        where_params.append(like)
-        add_like("description", term, 2)
+        add_term_group(term, 0.9)
+
+    if raw_lower:
+        add_score("LOWER(p.product_name)", raw_lower, 40)
+        add_score("LOWER(p.brand)", raw_lower, 24)
+        add_score("LOWER(p.category)", raw_lower, 18)
+        add_score("LOWER(p.product_name)", f"{raw_lower}%", 26, like=True)
+        add_score("LOWER(p.brand)", f"{raw_lower}%", 14, like=True)
+        add_score("LOWER(p.category)", f"{raw_lower}%", 10, like=True)
+        add_score("LOWER(p.product_name)", f"%{raw_lower}%", 12, like=True)
+        add_score("LOWER(p.brand)", f"%{raw_lower}%", 7, like=True)
+        add_score("LOWER(p.category)", f"%{raw_lower}%", 5, like=True)
+        add_score("LOWER(p.description)", f"%{raw_lower}%", 3, like=True)
+        add_soundex_score("p.product_name", raw_lower, 5)
+        add_soundex_score("p.brand", raw_lower, 3)
+        add_soundex_score("p.category", raw_lower, 2)
 
     if min_price is not None and max_price is not None:
-        where_parts.append("price BETWEEN %s AND %s")
+        where_parts.append("p.price BETWEEN %s AND %s")
         where_params.extend([min_price, max_price])
     elif min_price is not None:
-        where_parts.append("price >= %s")
+        where_parts.append("p.price >= %s")
         where_params.append(min_price)
     elif max_price is not None:
-        where_parts.append("price <= %s")
+        where_parts.append("p.price <= %s")
         where_params.append(max_price)
 
     where_clause = ""
@@ -2135,10 +2213,22 @@ def advanced_product_search(raw_query):
         score_expr = " + ".join(score_parts)
 
     sql = f"""
-        SELECT *, ({score_expr}) AS score
-        FROM products
+        SELECT
+            p.*,
+            COALESCE(r.avg_rating, 0) AS avg_rating,
+            COALESCE(r.rating_count, 0) AS rating_count,
+            ({score_expr})
+              + (COALESCE(r.avg_rating, 0) * 2)
+              + (LEAST(COALESCE(r.rating_count, 0), 50) * 0.2) AS score
+        FROM products p
+        LEFT JOIN (
+            SELECT product_id, AVG(rating) AS avg_rating, COUNT(*) AS rating_count
+            FROM product_reviews
+            WHERE is_seed = 0
+            GROUP BY product_id
+        ) r ON r.product_id = p.product_id
         {where_clause}
-        ORDER BY score DESC, product_name
+        ORDER BY score DESC, rating_count DESC, avg_rating DESC, p.product_name
         LIMIT 60
     """
 
