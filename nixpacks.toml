@@ -9,4 +9,4 @@ cmds = ["python -m venv /opt/venv", "/opt/venv/bin/pip install -r requirements.t
 cmds = ["python -c \"import sys; print('Build ok', sys.version)\""]
 
 [start]
-cmd = "gunicorn wsgi:app --bind 0.0.0.0:$PORT"
+cmd = "gunicorn -c gunicorn.conf.py wsgi:app"
