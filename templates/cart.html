@@ -10,6 +10,19 @@
     .remove-link:hover { text-decoration: underline; }
     .checkout-btn { background:#ff7a00; border:none; font-weight:700; }
     .checkout-btn:hover { background:#e86f00; }
+    .payment-badges { display:flex; flex-wrap:wrap; gap:8px; }
+    .payment-badges span {
+      display:inline-flex;
+      align-items:center;
+      gap:6px;
+      padding:6px 10px;
+      border-radius:999px;
+      border:1px solid #e2e8f0;
+      background:#fff;
+      font-size:12px;
+      font-weight:600;
+      color:#0f172a;
+    }
   </style>
 {% endblock %}
 {% block content %}
@@ -95,9 +108,11 @@
             <span><i class="fa-solid fa-shield-halved"></i> Dispute support</span>
           </div>
           <div class="payment-badges mt-2">
-            <span>M-Pesa</span>
-            <span>Card</span>
-            <span>Pay on Delivery</span>
+            <span><i class="fa-solid fa-money-bill-wave"></i> M-Pesa</span>
+            <span><i class="fa-brands fa-cc-visa"></i> Visa</span>
+            <span><i class="fa-brands fa-cc-mastercard"></i> Mastercard</span>
+            <span><i class="fa-solid fa-shield-check"></i> SSL Secure</span>
+            <span><i class="fa-solid fa-truck"></i> Pay on Delivery</span>
           </div>
 
           

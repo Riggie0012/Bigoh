@@ -23,10 +23,16 @@
     background: radial-gradient(1200px 600px at 15% 10%, #2a154a 0%, #160c2a 45%, #0b0b16 100%);
     color: var(--text);
     min-height: 100vh;
+    height: 100vh;
+    overflow: hidden;
   }
 
   .dash-wrap {
-    padding: 28px 28px 40px;
+    padding: 18px 22px 22px;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
   }
 
   .dash-top {
@@ -70,7 +76,6 @@
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
     gap: 14px;
-    margin-bottom: 16px;
   }
 
   .kpi-card {
@@ -128,6 +133,7 @@
     display: grid;
     grid-template-columns: repeat(12, 1fr);
     gap: 16px;
+    flex: 1;
   }
 
   .panel {
@@ -146,9 +152,9 @@
     margin-bottom: 12px;
   }
 
-  .panel.large { grid-column: span 7; }
-  .panel.medium { grid-column: span 5; }
-  .panel.small { grid-column: span 4; }
+  .panel.large { grid-column: span 7; height: 260px; }
+  .panel.medium { grid-column: span 5; height: 260px; }
+  .panel.small { grid-column: span 4; height: 220px; }
 
   .chart-wrap {
     background: rgba(10, 6, 20, 0.55);
@@ -211,7 +217,13 @@
   }
 
   .orders-panel {
-    margin-top: 18px;
+    height: 260px;
+    overflow: hidden;
+  }
+
+  .orders-panel .table-responsive {
+    max-height: 190px;
+    overflow: auto;
   }
 
   .table-dark {
@@ -357,7 +369,7 @@
           </tr>
         </thead>
         <tbody>
-          {% for o in orders %}
+          {% for o in orders[:6] %}
           <tr>
             <td class="mono">{{ o[0] }}</td>
             {% if has_reference %}
