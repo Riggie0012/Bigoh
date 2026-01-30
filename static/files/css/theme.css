@@ -144,6 +144,29 @@ a { color: inherit; }
   color: #ffb26b;
 }
 
+.verified-badge {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  z-index: 2;
+  background: rgba(15, 23, 42, 0.92);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 5px 9px;
+  border-radius: 999px;
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.25);
+}
+
+.product-grid-card,
+.result-card,
+.flash-sale-card,
+.product-image-card {
+  position: relative;
+}
+
 /* Helpers */
 .text-danger {
   color: #ef4444 !important;
