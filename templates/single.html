@@ -3,35 +3,28 @@
 {% block extra_head %}
 <style>
   .single-page {
-    background: radial-gradient(1200px 700px at 10% -10%, #f8f4ff 0%, #f3f7ff 35%, #f7fbff 60%, #ffffff 100%);
+    background: #f8fafc;
     min-height: 100vh;
   }
   .single-hero {
-    border-radius: 28px;
-    padding: 28px;
-    background: linear-gradient(135deg, rgba(20, 28, 47, 0.9), rgba(17, 24, 39, 0.95));
-    color: #e5e7eb;
-    box-shadow: 0 28px 60px rgba(15, 23, 42, 0.18);
-    position: relative;
-    overflow: hidden;
+    border-radius: 20px;
+    padding: 22px;
+    background: #ffffff;
+    color: #0f172a;
+    box-shadow: 0 12px 30px rgba(15, 23, 42, 0.08);
+    border: 1px solid #e2e8f0;
   }
-  .single-hero::after {
-    content: "";
-    position: absolute;
-    inset: 0;
-    background: radial-gradient(400px 200px at 80% 10%, rgba(59, 130, 246, 0.35), transparent 70%);
-    pointer-events: none;
-  }
+  .single-hero::after { content: none; }
   .single-chip {
     display: inline-flex;
     align-items: center;
     gap: 8px;
-    padding: 6px 14px;
+    padding: 6px 12px;
     border-radius: 999px;
-    background: rgba(59, 130, 246, 0.2);
-    color: #bfdbfe;
+    background: #eef2ff;
+    color: #3730a3;
     font-size: 12px;
-    letter-spacing: 0.08em;
+    letter-spacing: 0.06em;
     text-transform: uppercase;
   }
   .single-title {
@@ -45,9 +38,9 @@
   }
   .single-card {
     background: #fff;
-    border-radius: 24px;
-    border: 1px solid rgba(148, 163, 184, 0.2);
-    box-shadow: 0 22px 40px rgba(15, 23, 42, 0.08);
+    border-radius: 18px;
+    border: 1px solid #e2e8f0;
+    box-shadow: 0 12px 24px rgba(15, 23, 42, 0.06);
   }
   .media-card {
     padding: 20px;
@@ -87,6 +80,7 @@
     align-items: center;
     gap: 8px;
     background: #f8fafc;
+    border: 1px solid #e2e8f0;
     padding: 10px 12px;
     border-radius: 12px;
     font-size: 13px;
@@ -117,7 +111,7 @@
     margin: 0 0 10px;
   }
   .review-card {
-    border: 1px solid rgba(148, 163, 184, 0.2);
+    border: 1px solid #e2e8f0;
     border-radius: 16px;
     padding: 16px;
     background: #fff;
@@ -129,13 +123,14 @@
     border: 1px solid rgba(148, 163, 184, 0.3);
   }
   .info-panel {
-    background: #0f172a;
-    color: #e2e8f0;
-    border-radius: 20px;
-    padding: 18px;
+    background: #ffffff;
+    color: #0f172a;
+    border-radius: 18px;
+    padding: 16px;
+    border: 1px solid #e2e8f0;
   }
   .info-panel .small {
-    color: rgba(226, 232, 240, 0.7);
+    color: #64748b;
   }
   .form-card {
     border-radius: 18px;
@@ -254,17 +249,6 @@
 {% block content %}
 <div class="single-page">
   <div class="container py-4">
-    <section class="single-hero mb-4">
-      <span class="single-chip"><i class="fa-solid fa-bag-shopping"></i> {{ product[2] }}</span>
-      <div class="single-title">{{ product[1] }}</div>
-      <div class="single-sub">{{ product[6] }}</div>
-      <div class="meta-row">
-        <span class="meta-pill">Fast delivery</span>
-        <span class="meta-pill">Secure checkout</span>
-        <span class="meta-pill">Quality checked</span>
-      </div>
-    </section>
-
     <section class="row g-4 align-items-start">
       <div class="col-lg-7">
         <div class="single-card media-card mb-3">

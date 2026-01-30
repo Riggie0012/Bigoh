@@ -2,8 +2,100 @@
 {% block title %}Home{% endblock %}
 {% block extra_head %}
   <link rel="stylesheet" href="../static/files/css/lightslider.css">
+  <style>
+    .home-clean {
+      background: #f8fafc;
+    }
+    .home-clean .trust-strip {
+      background: #fff;
+      border: 1px solid #e2e8f0;
+      border-radius: 16px;
+      padding: 12px 16px;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+      gap: 10px;
+      font-size: 13px;
+    }
+    .home-clean .section-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 0 6px;
+      margin: 18px 0 8px;
+    }
+    .home-clean .section-head h1,
+    .home-clean h1 {
+      font-size: 22px;
+      font-weight: 700;
+      color: #0f172a;
+    }
+    .home-clean .section-head__link,
+    .home-clean a.text-decoration-none {
+      color: #0f172a;
+      font-weight: 600;
+    }
+    .home-clean .slider {
+      background: transparent;
+    }
+    .home-clean .box {
+      background: #fff;
+      border: 1px solid #e2e8f0;
+      border-radius: 16px;
+      overflow: hidden;
+      box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
+    }
+    .home-clean .slide-img {
+      background: #f1f5f9;
+    }
+    .home-clean .slide-img img {
+      width: 100%;
+      height: 190px;
+      object-fit: cover;
+    }
+    .home-clean .overlay {
+      background: rgba(15, 23, 42, 0.55);
+    }
+    .home-clean .buy-btn {
+      background: #0f172a;
+      border-radius: 999px;
+      padding: 8px 16px;
+      font-weight: 600;
+    }
+    .home-clean .detail-box {
+      padding: 12px 14px 14px;
+      font-size: 14px;
+      color: #0f172a;
+    }
+    .home-clean .detail-box b {
+      font-size: 15px;
+    }
+    .home-clean .quality-check {
+      font-size: 12px;
+      color: #16a34a;
+      margin: 6px 0;
+    }
+    .home-clean .btn-outline-primary {
+      border-radius: 999px;
+      border-color: #0f172a;
+      color: #0f172a;
+      font-weight: 600;
+    }
+    .home-clean .btn-outline-primary:hover {
+      background: #0f172a;
+      color: #fff;
+    }
+    .home-clean .flash-sale-wrap {
+      background: #fff;
+      border: 1px solid #e2e8f0;
+      border-radius: 18px;
+      padding: 16px;
+      box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06);
+    }
+  </style>
 {% endblock %}
 {% block content %}
+<div class="home-clean">
 <div class="container-fluid">
                 <br>
         
@@ -421,6 +513,7 @@
     </section>
 
     <br>
+  </div>
 {% endblock %}
 {% block extra_scripts %}
   <script src="../static/files/js/jquery.js"></script>
