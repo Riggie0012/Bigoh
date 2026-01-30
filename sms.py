@@ -1,17 +1,29 @@
 # sending an sms
+import os
 import africastalking
-africastalking.initialize(
-    username="joe2022",
-    api_key="aab3047eb9ccfb3973f928d4ebdead9e60beb936b4d2838f7725c9cc165f0c8a"
-    #justpaste.it/1nua8
-)
-sms = africastalking.SMS
+
+AFRICASTALKING_USERNAME = os.getenv("AFRICASTALKING_USERNAME", "")
+AFRICASTALKING_API_KEY = os.getenv("AFRICASTALKING_API_KEY", "")
+AFRICASTALKING_SENDER_ID = os.getenv("AFRICASTALKING_SENDER_ID", "Bigoh")
+
+if AFRICASTALKING_USERNAME and AFRICASTALKING_API_KEY:
+    africastalking.initialize(
+        username=AFRICASTALKING_USERNAME,
+        api_key=AFRICASTALKING_API_KEY,
+    )
+    sms = africastalking.SMS
+else:
+    sms = None
+
+
 def send_sms(phone, message):
+    if sms is None:
+        print("SMS not configured: missing AFRICASTALKING_USERNAME or AFRICASTALKING_API_KEY.")
+        return
     recipients = [phone]
-    sender = "Bigoh"
+    sender = AFRICASTALKING_SENDER_ID
     try:
-        response = sms.send(message, recipients)
+        response = sms.send(message, recipients, sender)
         print(response)
     except Exception as error:
         print("Error is ", error)
-	

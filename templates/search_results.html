@@ -116,7 +116,7 @@
                 {% for cat in categories %}
                   <li>
                     <a class="filter-link {% if category_filter == cat.name %}active{% endif %}"
-                       href="{{ url_for('search', q=q, category=cat.name, brand=brand_filter, min_price=min_price, max_price=max_price, sort=sort) }}">
+                       href="{{ url_for('search', q=q, category=cat.name, brand=brand_filter, min_price=min_price, max_price=max_price, sort=sort, availability=availability_filter, min_rating=min_rating) }}">
                       <span>{{ cat.name }}</span>
                       <span class="filter-count">{{ cat.count }}</span>
                     </a>
@@ -129,7 +129,7 @@
           </div>
 
           <div class="filter-card mb-3">
-            <div class="filter-title">Price (KES)</div>
+            <div class="filter-title">Price & Filters</div>
             <form method="GET" action="/search">
               <input type="hidden" name="q" value="{{ q }}">
               {% if category_filter %}
@@ -139,6 +139,22 @@
               <input type="hidden" name="brand" value="{{ brand_filter }}">
               {% endif %}
               <input type="hidden" name="sort" value="{{ sort }}">
+              <div class="mb-2">
+                <label class="text-muted small">Availability</label>
+                <select class="form-select form-select-sm" name="availability">
+                  <option value="all" {% if availability_filter == 'all' %}selected{% endif %}>All</option>
+                  <option value="in_stock" {% if availability_filter == 'in_stock' %}selected{% endif %}>In stock only</option>
+                </select>
+              </div>
+              <div class="mb-2">
+                <label class="text-muted small">Minimum rating</label>
+                <select class="form-select form-select-sm" name="min_rating">
+                  <option value="0" {% if min_rating|float <= 0 %}selected{% endif %}>All ratings</option>
+                  <option value="4" {% if min_rating|float == 4 %}selected{% endif %}>4★ & up</option>
+                  <option value="3" {% if min_rating|float == 3 %}selected{% endif %}>3★ & up</option>
+                  <option value="2" {% if min_rating|float == 2 %}selected{% endif %}>2★ & up</option>
+                </select>
+              </div>
               <div class="price-range mb-2">
                 <input class="form-control" type="number" name="min_price" id="minPriceInput" value="{{ min_price }}" min="{{ base_min }}" max="{{ base_max }}">
                 <span>-</span>
@@ -159,7 +175,7 @@
                 {% for brand in brands %}
                   <li>
                     <a class="filter-link {% if brand_filter == brand.name %}active{% endif %}"
-                       href="{{ url_for('search', q=q, category=category_filter, brand=brand.name, min_price=min_price, max_price=max_price, sort=sort) }}">
+                       href="{{ url_for('search', q=q, category=category_filter, brand=brand.name, min_price=min_price, max_price=max_price, sort=sort, availability=availability_filter, min_rating=min_rating) }}">
                       <span>{{ brand.name }}</span>
                       <span class="filter-count">{{ brand.count }}</span>
                     </a>
@@ -188,6 +204,8 @@
               {% endif %}
               <input type="hidden" name="min_price" value="{{ min_price }}">
               <input type="hidden" name="max_price" value="{{ max_price }}">
+              <input type="hidden" name="availability" value="{{ availability_filter }}">
+              <input type="hidden" name="min_rating" value="{{ min_rating }}">
               <label class="text-muted small">Sort by</label>
               <select class="sort-select" name="sort" onchange="this.form.submit()">
                 <option value="popularity" {% if sort == 'popularity' %}selected{% endif %}>Popularity</option>

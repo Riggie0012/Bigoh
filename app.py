@@ -31,11 +31,13 @@ import mailer
 app = Flask(__name__)
 
 
-app.secret_key = os.getenv("FLASK_SECRET_KEY", "AW_r%@jN*HU4AW_r%@jN*HU4AW_r%@jN*HU4")
+app.secret_key = os.getenv("FLASK_SECRET_KEY")
+if not app.secret_key:
+    raise RuntimeError("FLASK_SECRET_KEY is required.")
 WHATSAPP_NUMBER = os.getenv("WHATSAPP_NUMBER", "+254752370545")
 ADMIN_USERS = {
     name.strip()
-    for name in os.getenv("ADMIN_USERS", "myvpn").split(",")
+    for name in os.getenv("ADMIN_USERS", "").split(",")
     if name.strip()
 }
 BUSINESS_NAME = os.getenv("BUSINESS_NAME", "Bigoh")
@@ -462,11 +464,27 @@ def verify_password(stored_password, provided_password):
     except (ValueError, TypeError):
         pass
 
-    # Legacy plaintext fallback
-    if stored_password == provided_password:
-        return True, True
-
     return False, False
+
+
+def get_user_is_admin(user_id) -> bool:
+    if not user_id:
+        return False
+    if not users_has_is_admin():
+        return False
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT is_admin FROM users WHERE id = %s", (user_id,))
+            row = cur.fetchone()
+            return bool(_row_at(row, 0, 0))
+    except Exception:
+        return False
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
 
 
 def send_login_notifications(user_name, user_email, user_phone):
@@ -1418,12 +1436,6 @@ def home():
     )
 
 
-# Guided setup page
-@app.route("/setup")
-def setup_guide():
-    return render_template("setup_guide.html")
-
-
 #Single_item route
 @app.route("/single_item/<product_id>")
 def single(product_id):
@@ -2092,7 +2104,7 @@ def auth_google_callback():
     session["key"] = username
     session["username"] = user_id
     session["remember_me"] = remember_me
-    session["is_admin"] = username in ADMIN_USERS
+    session["is_admin"] = get_user_is_admin(user_id)
     session.pop("pending_user_id", None)
 
     next_url = _pop_next_url()
@@ -2172,9 +2184,9 @@ def signin():
             session['remember_me'] = remember_me
 
             if has_admin_col:
-                session["is_admin"] = bool(user[5]) or (user[1] in ADMIN_USERS)
+                session["is_admin"] = bool(user[5])
             else:
-                session["is_admin"] = (user[1] in ADMIN_USERS)
+                session["is_admin"] = False
 
             send_login_notifications(user_name, user_email, user_phone)
 
@@ -2345,6 +2357,8 @@ def search():
 
     category_filter = request.args.get("category", "").strip()
     brand_filter = request.args.get("brand", "").strip()
+    availability_filter = request.args.get("availability", "all").strip()
+    min_rating_raw = request.args.get("min_rating", "").strip()
     sort = request.args.get("sort", "popularity").strip()
     min_price_raw = request.args.get("min_price", "").strip()
     max_price_raw = request.args.get("max_price", "").strip()
@@ -2385,6 +2399,10 @@ def search():
         max_price = float(max_price_raw) if max_price_raw else None
     except ValueError:
         max_price = None
+    try:
+        min_rating = float(min_rating_raw) if min_rating_raw else 0.0
+    except ValueError:
+        min_rating = 0.0
 
     conn = get_db_connection()
     try:
@@ -2411,6 +2429,18 @@ def search():
             continue
         if max_price is not None and price_val is not None and price_val > max_price:
             continue
+        if availability_filter == "in_stock":
+            stock_val = _row_at(row, 5, 0)
+            try:
+                stock_val = int(stock_val)
+            except (TypeError, ValueError):
+                stock_val = 0
+            if stock_val <= 0:
+                continue
+        if min_rating:
+            avg_rating = ratings.get(_row_at(row, 0), {}).get("avg", 0)
+            if avg_rating < min_rating:
+                continue
         filtered.append(row)
 
     category_counts = {}
@@ -2474,6 +2504,8 @@ def search():
         ratings=ratings,
         category_filter=category_filter,
         brand_filter=brand_filter,
+        availability_filter=availability_filter,
+        min_rating=min_rating,
         sort=sort,
         min_price=min_price,
         max_price=max_price,
