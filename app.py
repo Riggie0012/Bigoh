@@ -11,6 +11,11 @@ from werkzeug.utils import secure_filename
 from werkzeug.security import generate_password_hash, check_password_hash
 import pymysql
 from dotenv import load_dotenv
+try:
+    from PIL import Image, ImageOps
+except Exception:
+    Image = None
+    ImageOps = None
 
 load_dotenv()
 import mailer
@@ -35,6 +40,15 @@ SUPPORT_EMAIL_ADMIN = os.getenv("SUPPORT_EMAIL_ADMIN", "junioronunga8@gmail.com"
 SUPPORT_PHONE = os.getenv("SUPPORT_PHONE", "0759 808 915")
 SUPPORT_WHATSAPP = os.getenv("SUPPORT_WHATSAPP", "254759808915")
 SUPPORT_HOURS = os.getenv("SUPPORT_HOURS", "Daily 8:00am - 8:00pm EAT")
+REVIEW_AUTO_APPROVE = os.getenv("REVIEW_AUTO_APPROVE", "0") == "1"
+REVIEW_TRUSTED_USERS = {
+    u.strip().lower()
+    for u in os.getenv("REVIEW_TRUSTED_USERS", "").split(",")
+    if u.strip()
+}
+REVIEW_MAX_IMAGE_BYTES = int(os.getenv("REVIEW_MAX_IMAGE_BYTES", "4000000"))
+REVIEW_MAX_IMAGE_PX = int(os.getenv("REVIEW_MAX_IMAGE_PX", "1600"))
+REVIEW_IMAGE_QUALITY = int(os.getenv("REVIEW_IMAGE_QUALITY", "80"))
 BRAND_PARTNERS = [
     p.strip()
     for p in os.getenv("BRAND_PARTNERS", "").split(",")
@@ -67,6 +81,65 @@ oauth.register(
 
 def allowed_file(filename: str) -> bool:
     return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
+
+
+def _normalize_user_name(value) -> str:
+    return str(value or "").strip().lower()
+
+
+def _is_trusted_review_user(name: str) -> bool:
+    return _normalize_user_name(name) in REVIEW_TRUSTED_USERS
+
+
+def compress_image(
+    path: str,
+    max_size: int = None,
+    quality: int = None,
+    target_bytes: int = None,
+) -> None:
+    if Image is None:
+        return
+    try:
+        img = Image.open(path)
+        if ImageOps is not None:
+            img = ImageOps.exif_transpose(img)
+        if max_size is None:
+            max_size = REVIEW_MAX_IMAGE_PX
+        if quality is None:
+            quality = REVIEW_IMAGE_QUALITY
+        if target_bytes is None:
+            target_bytes = REVIEW_MAX_IMAGE_BYTES
+        img_format = (img.format or "JPEG").upper()
+        img.thumbnail((max_size, max_size))
+        if img_format in {"JPEG", "JPG"} and img.mode in {"RGBA", "P"}:
+            img = img.convert("RGB")
+        save_kwargs = {}
+        if img_format in {"JPEG", "JPG"}:
+            save_kwargs.update({"optimize": True, "exif": b""})
+        elif img_format == "WEBP":
+            save_kwargs.update({"method": 6})
+
+        current_quality = max(35, min(quality, 95))
+        while True:
+            if img_format in {"JPEG", "JPG", "WEBP"}:
+                save_kwargs["quality"] = current_quality
+            img.save(path, img_format, **save_kwargs)
+            if target_bytes <= 0:
+                break
+            try:
+                if os.path.getsize(path) <= target_bytes:
+                    break
+            except Exception:
+                break
+            if current_quality <= 40 and max(img.size) <= 800:
+                break
+            if current_quality > 40:
+                current_quality = max(40, current_quality - 10)
+            else:
+                max_size = max(800, int(max_size * 0.85))
+                img.thumbnail((max_size, max_size))
+    except Exception:
+        return
 
 
 def image_url(path):
@@ -619,6 +692,7 @@ def ensure_reviews_table(cur):
                 rating INT NOT NULL,
                 comment TEXT NOT NULL,
                 review_photo VARCHAR(255) NULL,
+                review_photo_approved TINYINT(1) NOT NULL DEFAULT 0,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 is_seed TINYINT(1) NOT NULL DEFAULT 0,
                 INDEX (product_id)
@@ -631,6 +705,11 @@ def ensure_reviews_table(cur):
                 "ALTER TABLE product_reviews ADD COLUMN review_photo VARCHAR(255) NULL"
             )
             app.config[_schema_cache_key("product_reviews", "review_photo")] = True
+        if not table_has_column(conn, "product_reviews", "review_photo_approved"):
+            cur.execute(
+                "ALTER TABLE product_reviews ADD COLUMN review_photo_approved TINYINT(1) NOT NULL DEFAULT 0"
+            )
+            app.config[_schema_cache_key("product_reviews", "review_photo_approved")] = True
         return True
     except Exception:
         return False
@@ -680,7 +759,7 @@ def seed_sample_reviews(cur):
         return False
 
 
-def get_product_reviews(conn, product_id):
+def get_product_reviews(conn, product_id, viewer_name=None):
     reviews = []
     avg_rating = 0.0
     review_count = 0
@@ -691,10 +770,11 @@ def get_product_reviews(conn, product_id):
             if not ensure_reviews_table(cur):
                 return reviews, avg_rating, review_count, has_seed, breakdown
             conn.commit()
+            viewer_key = _normalize_user_name(viewer_name)
 
             cur.execute(
                 """
-                SELECT user_name, rating, comment, created_at, is_seed, review_photo
+                SELECT user_name, rating, comment, created_at, is_seed, review_photo, review_photo_approved
                 FROM product_reviews
                 WHERE product_id = %s AND is_seed = 0
                 ORDER BY created_at DESC, id DESC
@@ -754,17 +834,28 @@ def get_product_reviews(conn, product_id):
                 )
                 verified_map[user_name] = bool(cur.fetchone())
 
-            reviews = [
-                {
-                    "user_name": _row_at(r, 0, ""),
-                    "rating": _row_at(r, 1, 0),
-                    "comment": _row_at(r, 2, ""),
-                    "created_at": _row_at(r, 3, ""),
-                    "verified": verified_map.get(str(_row_at(r, 0, "") or "").strip(), False),
-                    "photo": _row_at(r, 5, ""),
-                }
-                for r in raw_reviews
-            ]
+            reviews = []
+            for r in raw_reviews:
+                user_name = _row_at(r, 0, "")
+                review_photo = _row_at(r, 5, "")
+                photo_approved = bool(_row_at(r, 6, 0))
+                is_owner = (
+                    bool(viewer_key)
+                    and _normalize_user_name(user_name) == viewer_key
+                )
+                photo_pending = bool(review_photo and (not photo_approved) and is_owner)
+                reviews.append(
+                    {
+                        "user_name": user_name,
+                        "rating": _row_at(r, 1, 0),
+                        "comment": _row_at(r, 2, ""),
+                        "created_at": _row_at(r, 3, ""),
+                        "verified": verified_map.get(str(user_name or "").strip(), False),
+                        "photo": review_photo if photo_approved else "",
+                        "photo_pending": photo_pending,
+                        "photo_pending_path": review_photo if photo_pending else "",
+                    }
+                )
     except Exception:
         return reviews, avg_rating, review_count, has_seed, breakdown
 
@@ -1057,8 +1148,11 @@ def single(product_id):
             return redirect(url_for("home"))
 
         reviews, avg_rating, review_count, has_seed, rating_breakdown = get_product_reviews(
-            connection, product_id
+            connection, product_id, session.get("key")
         )
+        can_review = False
+        if session.get("username"):
+            can_review = has_verified_purchase(connection, session.get("username"), product_id)
     finally:
         connection.close()
 
@@ -1074,6 +1168,7 @@ def single(product_id):
         review_count=review_count,
         has_seed=has_seed,
         rating_breakdown=rating_breakdown,
+        can_review=can_review,
     )
 
 
@@ -1108,10 +1203,12 @@ def add_product_review(product_id):
             if not cur.fetchone():
                 return redirect(url_for("home"))
 
+            if not has_verified_purchase(conn, user_id, product_id):
+                return redirect(url_for("single", product_id=product_id, review="verified-only"))
+
             photo_path = None
+            photo_approved = 0
             if photo and photo.filename:
-                if not has_verified_purchase(conn, user_id, product_id):
-                    return redirect(url_for("single", product_id=product_id, review="verified-only"))
                 if not allowed_file(photo.filename):
                     return redirect(url_for("single", product_id=product_id, review="photo-type"))
                 os.makedirs(REVIEW_UPLOAD_FOLDER, exist_ok=True)
@@ -1121,14 +1218,17 @@ def add_product_review(product_id):
                 filename = f"review_{product_id}_{user_id}_{safe_name}_{token}{ext}"
                 save_path = os.path.join(REVIEW_UPLOAD_FOLDER, filename)
                 photo.save(save_path)
+                compress_image(save_path)
                 photo_path = f"review_photos/{filename}"
+                if REVIEW_AUTO_APPROVE or _is_trusted_review_user(name):
+                    photo_approved = 1
 
             cur.execute(
                 """
-                INSERT INTO product_reviews (product_id, user_name, rating, comment, review_photo, is_seed)
-                VALUES (%s, %s, %s, %s, %s, 0)
+                INSERT INTO product_reviews (product_id, user_name, rating, comment, review_photo, review_photo_approved, is_seed)
+                VALUES (%s, %s, %s, %s, %s, %s, 0)
                 """,
-                (product_id, name, rating, comment, photo_path),
+                (product_id, name, rating, comment, photo_path, photo_approved),
             )
         conn.commit()
     finally:
@@ -2495,6 +2595,77 @@ def terms():
     return render_template("terms.html")
 
 
+@app.route("/admin/review-photos")
+@admin_required
+def admin_review_photos():
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cur:
+            if not ensure_reviews_table(cur):
+                reviews = []
+            else:
+                cur.execute(
+                    """
+                    SELECT r.id, r.product_id, p.product_name, r.user_name, r.rating,
+                           r.comment, r.review_photo, r.created_at
+                    FROM product_reviews r
+                    JOIN products p ON p.product_id = r.product_id
+                    WHERE r.review_photo IS NOT NULL
+                      AND r.review_photo <> ''
+                      AND (r.review_photo_approved IS NULL OR r.review_photo_approved = 0)
+                    ORDER BY r.created_at DESC
+                    """
+                )
+                reviews = cur.fetchall() or []
+    finally:
+        conn.close()
+    return render_template("admin_review_photos.html", reviews=reviews)
+
+
+@app.route("/admin/reviews/<int:review_id>/approve", methods=["POST"])
+@admin_required
+def admin_review_photo_approve(review_id):
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE product_reviews SET review_photo_approved = 1 WHERE id = %s",
+                (review_id,),
+            )
+        conn.commit()
+    finally:
+        conn.close()
+    return redirect(url_for("admin_review_photos"))
+
+
+@app.route("/admin/reviews/<int:review_id>/reject", methods=["POST"])
+@admin_required
+def admin_review_photo_reject(review_id):
+    photo_path = None
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT review_photo FROM product_reviews WHERE id = %s", (review_id,))
+            row = cur.fetchone()
+            photo_path = _row_at(row, 0, None) if row else None
+            cur.execute(
+                "UPDATE product_reviews SET review_photo = NULL, review_photo_approved = 0 WHERE id = %s",
+                (review_id,),
+            )
+        conn.commit()
+    finally:
+        conn.close()
+
+    if photo_path:
+        try:
+            full_path = os.path.join("static", photo_path)
+            if os.path.isfile(full_path):
+                os.remove(full_path)
+        except Exception:
+            pass
+    return redirect(url_for("admin_review_photos"))
+
+
 #Add to cart route
 def get_product(product_id):
     connection = get_db_connection()
@@ -2875,6 +3046,7 @@ def upload():
 
         save_path = os.path.join(app.config["UPLOAD_FOLDER"], final_name)
         file.save(save_path)
+        compress_image(save_path)
 
         # Store relative path in DB (matches how you render: /static/....)
         image_url = f"images/{final_name}"  # because it's inside static/images/
@@ -3392,6 +3564,7 @@ def admin_edit_product(product_id):
                             i += 1
                         save_path = os.path.join(app.config["UPLOAD_FOLDER"], final_name)
                         file.save(save_path)
+                        compress_image(save_path)
                         image_url = f"images/{final_name}"
 
                 cur.execute(

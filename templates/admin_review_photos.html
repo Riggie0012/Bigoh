@@ -1,0 +1,132 @@
+{% extends 'base.html' %}
+{% block title %}Review Photos | Bigoh Admin{% endblock %}
+{% block extra_head %}
+<style>
+    :root {
+      --bg: #0e0f12;
+      --panel: #15171c;
+      --panel-2: #1c1f26;
+      --border: #232733;
+      --text: #f4f4f5;
+      --muted: #98a2b3;
+      --orange: #ff8a00;
+      --green: #3ddc97;
+    }
+    body {
+      font-family: "Space Grotesk", sans-serif;
+      background: radial-gradient(1200px 600px at 20% 0%, #1b1f2a 0%, #0e0f12 45%, #0b0c10 100%);
+      color: var(--text);
+      min-height: 100vh;
+    }
+    .shell {
+      display: grid;
+      grid-template-columns: 260px 1fr;
+      min-height: 100vh;
+    }
+    .sidebar {
+      padding: 22px;
+      border-right: 1px solid var(--border);
+      background: rgba(12, 14, 18, 0.9);
+    }
+    .nav-links a {
+      display: block;
+      padding: 10px 12px;
+      border-radius: 10px;
+      color: var(--muted);
+      text-decoration: none;
+      margin-bottom: 8px;
+      border: 1px solid transparent;
+    }
+    .nav-links a.active,
+    .nav-links a:hover {
+      color: #fff;
+      border-color: var(--border);
+      background: var(--panel-2);
+    }
+    .content {
+      padding: 24px;
+    }
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 16px;
+    }
+    .review-photo {
+      width: 120px;
+      height: 90px;
+      object-fit: cover;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+    }
+    .btn-approve {
+      background: #1f9d55;
+      border: none;
+      color: #fff;
+    }
+    .btn-reject {
+      background: #b91c1c;
+      border: none;
+      color: #fff;
+    }
+  </style>
+{% endblock %}
+{% block navbar %}{% endblock %}
+{% block footer %}{% endblock %}
+{% block content %}
+<div class="shell">
+  <aside class="sidebar">
+    <h4>Admin</h4>
+    <div class="nav-links">
+      <a href="/admin/products">Products</a>
+      <a href="/admin/orders">Orders</a>
+      <a href="/admin/review-photos" class="active">Review Photos</a>
+      <a href="/upload">Upload Products</a>
+    </div>
+  </aside>
+  <main class="content">
+    <div class="panel">
+      <h5 class="mb-3">Photo Reviews Pending Approval</h5>
+      {% if reviews and reviews|length > 0 %}
+      <div class="table-responsive">
+        <table class="table table-dark table-striped align-middle">
+          <thead>
+            <tr>
+              <th>Product</th>
+              <th>User</th>
+              <th>Rating</th>
+              <th>Comment</th>
+              <th>Photo</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for r in reviews %}
+            <tr>
+              <td>#{{ r[1] }} · {{ r[2] }}</td>
+              <td>{{ r[3] }}</td>
+              <td>{{ r[4] }}★</td>
+              <td>{{ r[5] }}</td>
+              <td>
+                <img src="{{ url_for('static', filename=r[6]) }}" alt="Review photo" class="review-photo">
+              </td>
+              <td>
+                <form method="POST" action="/admin/reviews/{{ r[0] }}/approve" class="d-inline">
+                  <button class="btn btn-sm btn-approve">Approve</button>
+                </form>
+                <form method="POST" action="/admin/reviews/{{ r[0] }}/reject" class="d-inline">
+                  <button class="btn btn-sm btn-reject">Reject</button>
+                </form>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+        <div class="text-muted">No pending photo reviews.</div>
+      {% endif %}
+    </div>
+  </main>
+</div>
+{% endblock %}

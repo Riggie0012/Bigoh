@@ -1,155 +1,317 @@
-{% extends 'base.html' %}
-{% block title %}Products{% endblock %}
+﻿{% extends 'base.html' %}
+{% block title %}{{ product[1] }} | {{ business_name }}{% endblock %}
+{% block extra_head %}
+<style>
+  .single-page {
+    background: radial-gradient(1200px 700px at 10% -10%, #f8f4ff 0%, #f3f7ff 35%, #f7fbff 60%, #ffffff 100%);
+    min-height: 100vh;
+  }
+  .single-hero {
+    border-radius: 28px;
+    padding: 28px;
+    background: linear-gradient(135deg, rgba(20, 28, 47, 0.9), rgba(17, 24, 39, 0.95));
+    color: #e5e7eb;
+    box-shadow: 0 28px 60px rgba(15, 23, 42, 0.18);
+    position: relative;
+    overflow: hidden;
+  }
+  .single-hero::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(400px 200px at 80% 10%, rgba(59, 130, 246, 0.35), transparent 70%);
+    pointer-events: none;
+  }
+  .single-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 14px;
+    border-radius: 999px;
+    background: rgba(59, 130, 246, 0.2);
+    color: #bfdbfe;
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+  .single-title {
+    font-size: clamp(28px, 4vw, 40px);
+    font-weight: 700;
+    margin: 14px 0 10px;
+  }
+  .single-sub {
+    color: rgba(229, 231, 235, 0.8);
+    max-width: 520px;
+  }
+  .single-card {
+    background: #fff;
+    border-radius: 24px;
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    box-shadow: 0 22px 40px rgba(15, 23, 42, 0.08);
+  }
+  .media-card {
+    padding: 20px;
+  }
+  .media-card img {
+    width: 100%;
+    border-radius: 18px;
+    object-fit: cover;
+    aspect-ratio: 4 / 3;
+    background: #f1f5f9;
+  }
+  .meta-card {
+    padding: 20px 22px;
+  }
+  .meta-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-top: 14px;
+  }
+  .meta-pill {
+    background: #eef2ff;
+    color: #3730a3;
+    padding: 6px 12px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 600;
+  }
+  .trust-strip {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 10px;
+    margin-top: 14px;
+  }
+  .trust-strip span {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: #f8fafc;
+    padding: 10px 12px;
+    border-radius: 12px;
+    font-size: 13px;
+    color: #0f172a;
+  }
+  .buy-card {
+    padding: 22px;
+    position: sticky;
+    top: 24px;
+  }
+  .price-tag {
+    font-size: 28px;
+    font-weight: 700;
+    color: #dc2626;
+  }
+  .rating-line {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 14px;
+  }
+  .rating-stars {
+    color: #f59e0b;
+  }
+  .section-title {
+    font-size: 22px;
+    font-weight: 700;
+    margin: 0 0 10px;
+  }
+  .review-card {
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    border-radius: 16px;
+    padding: 16px;
+    background: #fff;
+  }
+  .review-photo {
+    width: 100%;
+    max-width: 240px;
+    border-radius: 14px;
+    border: 1px solid rgba(148, 163, 184, 0.3);
+  }
+  .info-panel {
+    background: #0f172a;
+    color: #e2e8f0;
+    border-radius: 20px;
+    padding: 18px;
+  }
+  .info-panel .small {
+    color: rgba(226, 232, 240, 0.7);
+  }
+  .form-card {
+    border-radius: 18px;
+    background: #f8fafc;
+    border: 1px solid rgba(148, 163, 184, 0.2);
+  }
+  @media (max-width: 991px) {
+    .buy-card {
+      position: static;
+    }
+  }
+</style>
+{% endblock %}
 {% block content %}
-<div class="container-fluid">
-     <!-- Include Navbar -->
-         
-          <section class="row g-4 py-4">
-               <div class="col-md-5 col-lg-4">
-	       <!-- product variable holds the Current Product, This comes from /single_item route in app.py  -->
-               <!-- product variable is indexed from 0  - 5  to access specific product details
-               product[1] is product name, product[5] represent product image etc..  -->
-                      <div class="card p-3 product-image-card">
-                        
-                        <img src="{{ image_url(product[7]) }}" alt="{{ product[1] }}" class="img-fluid rounded" loading="lazy" decoding="async">
-                      </div>
-                      <div class="mt-3">
-                        <h3 class="fw-bold">{{ product[1] }}</h3>
-                        <div class="text-muted small">Category: {{ product[2] }}</div>
-                      </div>
-               </div>
+<div class="single-page">
+  <div class="container py-4">
+    <section class="single-hero mb-4">
+      <span class="single-chip"><i class="fa-solid fa-bag-shopping"></i> {{ product[2] }}</span>
+      <div class="single-title">{{ product[1] }}</div>
+      <div class="single-sub">{{ product[6] }}</div>
+      <div class="meta-row">
+        <span class="meta-pill">Fast delivery</span>
+        <span class="meta-pill">Secure checkout</span>
+        <span class="meta-pill">Quality checked</span>
+      </div>
+    </section>
 
-              <div class="col-md-7 col-lg-8">
-                     <div class="card p-4 mb-4">
-                     <p class="text-muted">{{ product[6] }}</p>
-                     <h4 class="text-danger fw-bold">KES {{ product[4] }}</h4>
-                     {% if review_count and review_count > 0 %}
-                     <div class="d-flex align-items-center gap-2 mb-2">
-                       <span class="text-warning">
-                         {% for i in range(1, 6) %}
-                           {% if i <= avg_rating_int %}&#9733;{% else %}&#9734;{% endif %}
-                         {% endfor %}
-                       </span>
-                       <span class="text-muted small">{{ avg_rating }}/5</span>
-                       <span class="text-muted small">({{ review_count }} reviews)</span>
-                     </div>
-                     {% else %}
-                     <div class="text-muted small mb-2">No reviews yet.</div>
-                     {% endif %}
-                     <div class="trust-strip mb-3">
-                       <span><i class="fa-solid fa-lock"></i> Secure checkout (SSL)</span>
-                       <span><i class="fa-solid fa-circle-check"></i> Quality checked</span>
-                       <span><i class="fa-solid fa-shield-halved"></i> Dispute support</span>
-                     </div>
-                     {% if product[5] is not none and product[5]|int <= 5 %}
-                     <div class="text-danger small mb-2">Low stock: {{ product[5] }} left</div>
-                     {% endif %}
+    <section class="row g-4 align-items-start">
+      <div class="col-lg-7">
+        <div class="single-card media-card mb-3">
+          <img src="{{ image_url(product[7]) }}" alt="{{ product[1] }}" loading="lazy" decoding="async">
+        </div>
+        <div class="single-card meta-card mb-3">
+          <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+            <div>
+              <div class="text-muted">Category</div>
+              <div class="fw-semibold">{{ product[2] }}</div>
+            </div>
+            {% if review_count and review_count > 0 %}
+            <div class="rating-line">
+              <span class="rating-stars">
+                {% for i in range(1, 6) %}
+                  {% if i <= avg_rating_int %}&#9733;{% else %}&#9734;{% endif %}
+                {% endfor %}
+              </span>
+              <span class="text-muted">{{ avg_rating }}/5 · {{ review_count }} reviews</span>
+            </div>
+            {% else %}
+            <div class="text-muted small">No reviews yet.</div>
+            {% endif %}
+          </div>
+          <div class="trust-strip">
+            <span><i class="fa-solid fa-lock"></i> Secure checkout (SSL)</span>
+            <span><i class="fa-solid fa-circle-check"></i> Quality checked</span>
+            <span><i class="fa-solid fa-shield-halved"></i> Dispute support</span>
+          </div>
+          {% if product[5] is not none and product[5]|int <= 5 %}
+          <div class="text-danger small mt-3">Low stock: {{ product[5] }} left</div>
+          {% endif %}
+        </div>
+        <div class="info-panel">
+          <div class="fw-semibold mb-1">Why customers love it</div>
+          <div class="small">Consistent quality, verified seller support, and smooth delivery updates via WhatsApp.</div>
+        </div>
+      </div>
 
-                     <form method="POST" action="/add_to_cart/{{ product[0] }}" class="d-flex align-items-center gap-2">
-                   <input type="number" name="qty" value="1" min="1" class="form-control" style="width:120px;">
-                 <button class="btn btn-success">Add to Cart</button>
-                 </form>
-                 </div>
+      <div class="col-lg-5">
+        <div class="single-card buy-card">
+          <div class="price-tag">KES {{ product[4] }}</div>
+          <div class="text-muted small mb-3">Pay on delivery or add to cart for checkout.</div>
 
-                     
-                     <br>
+          <form method="POST" action="/add_to_cart/{{ product[0] }}" class="d-flex align-items-center gap-2 mb-3">
+            <input type="number" name="qty" value="1" min="1" class="form-control" style="width:120px;">
+            <button class="btn btn-success flex-grow-1">Add to Cart</button>
+          </form>
 
-      <section class="row">
-	  <div class="col-md-8">
-	      {% if request.args.get('err') == 'location' %}
-        <div class="alert alert-danger py-2">Please enter delivery location.</div>
+          {% if request.args.get('err') == 'location' %}
+          <div class="alert alert-danger py-2">Please enter delivery location.</div>
           {% endif %}
 
- <form method="POST" action="{{ url_for('pay_on_delivery') }}" class="card p-3 mt-3">
-  <input type="hidden" name="product_id" value="{{ product[0] }}">
+          <form method="POST" action="{{ url_for('pay_on_delivery') }}" class="form-card p-3">
+            <input type="hidden" name="product_id" value="{{ product[0] }}">
+            <label class="form-label">Quantity</label>
+            <input type="number" name="quantity" value="1" min="1" class="form-control" required>
+            <label class="form-label mt-2">Delivery Location</label>
+            <input type="text" name="location" class="form-control" placeholder="e.g., Nairobi CBD, OTC stage..." required>
+            <button type="submit" class="btn btn-dark w-100 mt-3">Pay on Delivery (WhatsApp)</button>
+          </form>
+        </div>
+      </div>
+    </section>
 
-  <label class="form-label">Quantity</label>
-  <input type="number" name="quantity" value="1" min="1" class="form-control" style="width:140px;" required>
+    <section class="row mt-5">
+      <div class="col-12">
+        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
+          <h4 class="section-title">Ratings &amp; Reviews</h4>
+          <div class="text-muted small">Only verified purchasers can submit reviews.</div>
+        </div>
 
-  <label class="form-label mt-2">Delivery Location</label>
-  <input type="text" name="location" class="form-control" placeholder="e.g., Nairobi CBD, OTC stage..." required>
+        {% if request.args.get('review') == 'ok' %}
+          <div class="alert alert-success py-2">Thanks! Your review has been submitted.</div>
+        {% elif request.args.get('review') == 'error' %}
+          <div class="alert alert-danger py-2">Please provide a rating and comment.</div>
+        {% elif request.args.get('review') == 'verified-only' %}
+          <div class="alert alert-warning py-2">Only verified purchasers can submit reviews.</div>
+        {% elif request.args.get('review') == 'photo-type' %}
+          <div class="alert alert-danger py-2">Photo must be JPG, PNG, or WEBP.</div>
+        {% elif request.args.get('review') == 'photo-size' %}
+          <div class="alert alert-danger py-2">Photo is too large. Please upload a smaller image.</div>
+        {% endif %}
 
-  <button type="submit" class="btn btn-success mt-3">
-    Pay on Delivery (WhatsApp)
-  </button>
-</form>
-
-	  </div>
-	</section>
-        <section class="row mt-4">
-          <div class="col-md-12">
-            <h4 class="fw-bold">Ratings &amp; Reviews</h4>
-
-            {% if request.args.get('review') == 'ok' %}
-              <div class="alert alert-success py-2">Thanks! Your review has been submitted.</div>
-            {% elif request.args.get('review') == 'error' %}
-              <div class="alert alert-danger py-2">Please provide a rating and comment.</div>
-            {% elif request.args.get('review') == 'verified-only' %}
-              <div class="alert alert-warning py-2">Photo uploads are available after a completed purchase.</div>
-            {% elif request.args.get('review') == 'photo-type' %}
-              <div class="alert alert-danger py-2">Photo must be JPG, PNG, or WEBP.</div>
-            {% endif %}
-
-            {% if rating_breakdown %}
-            <div class="card p-3 mb-3">
-              <div class="d-flex flex-wrap align-items-center gap-3">
-                <div>
-                  <div class="fw-bold">Rating Summary</div>
-                  <div class="text-muted small">{{ review_count }} total reviews</div>
-                </div>
-                <div class="flex-grow-1">
-                  {% for star in range(5, 0, -1) %}
-                  {% set count = rating_breakdown.get(star, 0) %}
-                  {% set pct = (count / review_count * 100) if review_count else 0 %}
-                  <div class="d-flex align-items-center gap-2 mb-1">
-                    <span class="text-warning">{{ star }}★</span>
-                    <div class="progress flex-grow-1" style="height: 8px;">
-                      <div class="progress-bar bg-success" style="width: {{ pct }}%"></div>
-                    </div>
-                    <span class="text-muted small">{{ count }}</span>
-                  </div>
-                  {% endfor %}
-                </div>
-              </div>
+        {% if rating_breakdown %}
+        <div class="single-card p-3 mb-3">
+          <div class="d-flex flex-wrap align-items-center gap-3">
+            <div>
+              <div class="fw-bold">Rating Summary</div>
+              <div class="text-muted small">{{ review_count }} total reviews</div>
             </div>
-            <div class="text-muted small mb-3">Verified purchase badges are shown when an order is completed.</div>
-            {% endif %}
-
-            {% if session.get('key') %}
-            <form method="POST" action="/product/{{ product[0] }}/review" class="card p-3 mb-3" enctype="multipart/form-data">
-              <div class="row g-2 align-items-end">
-                <div class="col-md-3">
-                  <label class="form-label">Rating</label>
-                  <select name="rating" class="form-select" required>
-                    <option value="">Select</option>
-                    <option value="5">5 - Excellent</option>
-                    <option value="4">4 - Great</option>
-                    <option value="3">3 - Good</option>
-                    <option value="2">2 - Fair</option>
-                    <option value="1">1 - Poor</option>
-                  </select>
+            <div class="flex-grow-1">
+              {% for star in range(5, 0, -1) %}
+              {% set count = rating_breakdown.get(star, 0) %}
+              {% set pct = (count / review_count * 100) if review_count else 0 %}
+              <div class="d-flex align-items-center gap-2 mb-1">
+                <span class="text-warning">{{ star }}★</span>
+                <div class="progress flex-grow-1" style="height: 8px;">
+                  <div class="progress-bar bg-success" style="width: {{ pct }}%"></div>
                 </div>
-                <div class="col-md-7">
-                  <label class="form-label">Comment</label>
-                  <input type="text" name="comment" class="form-control" maxlength="500" required>
-                </div>
-                <div class="col-md-2">
-                  <button class="btn btn-primary w-100" type="submit">Submit</button>
-                </div>
-                <div class="col-md-12">
-                  <label class="form-label">Photo (verified purchases only)</label>
-                  <input type="file" name="photo" accept="image/png,image/jpeg,image/webp" class="form-control">
-                  <div class="form-text">Upload a real photo from your purchase to help others trust the product.</div>
-                </div>
+                <span class="text-muted small">{{ count }}</span>
               </div>
-            </form>
-            {% else %}
-            <div class="alert alert-info py-2">Please sign in to leave a review.</div>
-            <a class="btn btn-outline-primary" href="/signin">Sign In</a>
-            {% endif %}
-            {% if reviews and reviews|length > 0 %}
-              {% for r in reviews %}
-              <div class="border rounded p-3 mb-3">
+              {% endfor %}
+            </div>
+          </div>
+        </div>
+        <div class="text-muted small mb-3">Verified purchase badges are shown when an order is completed.</div>
+        {% endif %}
+
+        {% if session.get('key') and can_review %}
+        <form method="POST" action="/product/{{ product[0] }}/review" class="single-card p-3 mb-3" enctype="multipart/form-data">
+          <div class="row g-2 align-items-end">
+            <div class="col-md-3">
+              <label class="form-label">Rating</label>
+              <select name="rating" class="form-select" required>
+                <option value="">Select</option>
+                <option value="5">5 - Excellent</option>
+                <option value="4">4 - Great</option>
+                <option value="3">3 - Good</option>
+                <option value="2">2 - Fair</option>
+                <option value="1">1 - Poor</option>
+              </select>
+            </div>
+            <div class="col-md-7">
+              <label class="form-label">Comment</label>
+              <input type="text" name="comment" class="form-control" maxlength="500" required>
+            </div>
+            <div class="col-md-2">
+              <button class="btn btn-primary w-100" type="submit">Submit</button>
+            </div>
+            <div class="col-md-12">
+              <label class="form-label">Photo (verified purchases only)</label>
+              <input type="file" name="photo" accept="image/png,image/jpeg,image/webp" class="form-control">
+              <div class="form-text">Upload a real photo from your purchase to help others trust the product.</div>
+            </div>
+          </div>
+        </form>
+        {% elif session.get('key') %}
+        <div class="alert alert-warning py-2">You can review this product after a completed purchase.</div>
+        {% else %}
+        <div class="alert alert-info py-2">Please sign in to leave a review.</div>
+        <a class="btn btn-outline-primary" href="/signin">Sign In</a>
+        {% endif %}
+
+        {% if reviews and reviews|length > 0 %}
+          <div class="row g-3">
+          {% for r in reviews %}
+            <div class="col-md-6">
+              <div class="review-card h-100">
                 <div class="d-flex justify-content-between align-items-center">
                   <div class="d-flex align-items-center gap-2">
                     <strong>{{ r.user_name }}</strong>
@@ -167,36 +329,41 @@
                 <div>{{ r.comment }}</div>
                 {% if r.photo %}
                   <img src="{{ url_for('static', filename=r.photo) }}" alt="Customer photo" class="review-photo mt-2" loading="lazy" decoding="async">
+                {% elif r.photo_pending %}
+                  <div class="mt-2">
+                    <span class="badge bg-warning text-dark">Pending approval</span>
+                  </div>
+                  <img src="{{ url_for('static', filename=r.photo_pending_path) }}" alt="Your photo pending approval" class="review-photo mt-2" loading="lazy" decoding="async">
                 {% endif %}
               </div>
-              {% endfor %}
-            {% else %}
-              <div class="text-muted">No reviews yet. Be the first to review this product.</div>
-            {% endif %}
-          </div>
-        </section>
-
-        <section class="row mt-4">
-          <div class="col-md-12">
-            <h4 class="fw-bold">Customer Photos</h4>
-            <div class="card p-3">
-              {% set photo_reviews = reviews|selectattr('photo')|list %}
-              {% if photo_reviews %}
-                <div class="row g-2">
-                  {% for r in photo_reviews %}
-                  <div class="col-6 col-md-3">
-                    <img src="{{ url_for('static', filename=r.photo) }}" alt="Customer photo" class="review-photo w-100" loading="lazy" decoding="async">
-                  </div>
-                  {% endfor %}
-                </div>
-              {% else %}
-                <div class="text-muted">Customer photos will appear here after verified purchases share them.</div>
-              {% endif %}
             </div>
+          {% endfor %}
           </div>
-        </section>
+        {% else %}
+          <div class="text-muted">No reviews yet. Be the first to review this product.</div>
+        {% endif %}
+      </div>
+    </section>
 
-
+    <section class="row mt-5">
+      <div class="col-md-12">
+        <h4 class="section-title">Customer Photos</h4>
+        <div class="single-card p-3">
+          {% set photo_reviews = reviews|selectattr('photo')|list %}
+          {% if photo_reviews %}
+            <div class="row g-2">
+              {% for r in photo_reviews %}
+              <div class="col-6 col-md-3">
+                <img src="{{ url_for('static', filename=r.photo) }}" alt="Customer photo" class="review-photo w-100" loading="lazy" decoding="async">
               </div>
-     </div>
+              {% endfor %}
+            </div>
+          {% else %}
+            <div class="text-muted">Customer photos will appear here after verified purchases share them.</div>
+          {% endif %}
+        </div>
+      </div>
+    </section>
+  </div>
+</div>
 {% endblock %}
