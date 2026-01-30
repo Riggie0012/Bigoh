@@ -1,4 +1,4 @@
-﻿# Bigoh (Beginner Friendly Guide)
+﻿# Bigoh 
 
 Bigoh is a ready-made online store you can run on your computer or deploy online.
 This guide is written for beginners. Follow the steps in order and you will have a working store.
@@ -154,8 +154,4 @@ AFRICASTALKING_API_KEY=your_api_key
 - Never share your .env
 - Change any leaked passwords immediately
 
----
 
-If you want, I can also add:
-- A one-click installer script
-- A guided setup page inside the app

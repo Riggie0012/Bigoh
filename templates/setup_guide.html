@@ -1,0 +1,145 @@
+﻿{% extends 'base.html' %}
+{% block title %}Setup Guide | {{ business_name }}{% endblock %}
+{% block extra_head %}
+<style>
+  .setup-shell {
+    background: #f8fafc;
+    min-height: 100vh;
+  }
+  .setup-hero {
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 18px;
+    padding: 20px 24px;
+    box-shadow: 0 12px 30px rgba(15, 23, 42, 0.08);
+  }
+  .setup-hero h1 {
+    font-size: 26px;
+    margin-bottom: 6px;
+  }
+  .setup-hero p {
+    color: #64748b;
+    margin-bottom: 0;
+  }
+  .step-card {
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 16px;
+    padding: 16px 18px;
+    box-shadow: 0 10px 24px rgba(15, 23, 42, 0.06);
+  }
+  .step-card h5 {
+    font-size: 16px;
+    margin-bottom: 6px;
+  }
+  .step-card p {
+    color: #64748b;
+    margin-bottom: 10px;
+  }
+  .setup-list {
+    margin: 0;
+    padding-left: 16px;
+    color: #0f172a;
+  }
+  .setup-list li {
+    margin-bottom: 6px;
+  }
+  .setup-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: #eef2ff;
+    color: #3730a3;
+    font-size: 12px;
+    font-weight: 600;
+  }
+  .setup-link {
+    color: #0f172a;
+    font-weight: 600;
+    text-decoration: none;
+  }
+  .setup-link:hover {
+    text-decoration: underline;
+  }
+</style>
+{% endblock %}
+{% block content %}
+<div class="setup-shell">
+  <div class="container py-4">
+    <div class="setup-hero mb-4">
+      <span class="setup-badge"><i class="fa-solid fa-compass"></i> Guided Setup</span>
+      <h1>Get your store ready in 15–30 minutes</h1>
+      <p>Follow these steps once. You can always return here later.</p>
+    </div>
+
+    <div class="row g-3">
+      <div class="col-lg-6">
+        <div class="step-card">
+          <h5>1) Add your business details</h5>
+          <p>Show customers you are real and verified.</p>
+          <ul class="setup-list">
+            <li>Business name, address, and support hours.</li>
+            <li>Registration number and authority (optional).</li>
+            <li>Update in your .env file or admin settings.</li>
+          </ul>
+        </div>
+      </div>
+      <div class="col-lg-6">
+        <div class="step-card">
+          <h5>2) Upload products</h5>
+          <p>Add at least 5 products before going live.</p>
+          <ul class="setup-list">
+            <li>Go to <a class="setup-link" href="/upload">Upload Products</a>.</li>
+            <li>Use clean, square product photos.</li>
+            <li>Write short, clear descriptions.</li>
+          </ul>
+        </div>
+      </div>
+      <div class="col-lg-6">
+        <div class="step-card">
+          <h5>3) Set up Flash Sales</h5>
+          <p>Boost sales with time‑limited offers.</p>
+          <ul class="setup-list">
+            <li>Open <a class="setup-link" href="/admin/flash-sale">Flash Sale</a>.</li>
+            <li>Pick products and set a duration.</li>
+            <li>Turn the sale on when ready.</li>
+          </ul>
+        </div>
+      </div>
+      <div class="col-lg-6">
+        <div class="step-card">
+          <h5>4) Choose Sponsored Products</h5>
+          <p>Highlight your best items on the home page.</p>
+          <ul class="setup-list">
+            <li>Go to <a class="setup-link" href="/admin/sponsored-products">Sponsored Products</a>.</li>
+            <li>Select items you want to feature.</li>
+          </ul>
+        </div>
+      </div>
+      <div class="col-lg-6">
+        <div class="step-card">
+          <h5>5) Check your store</h5>
+          <p>Make sure everything looks good before sharing.</p>
+          <ul class="setup-list">
+            <li>Visit the <a class="setup-link" href="/">home page</a>.</li>
+            <li>Open a product and test Add to Cart.</li>
+            <li>Confirm your contact info in the footer.</li>
+          </ul>
+        </div>
+      </div>
+      <div class="col-lg-6">
+        <div class="step-card">
+          <h5>6) Go live</h5>
+          <p>Share your store link and start selling.</p>
+          <ul class="setup-list">
+            <li>Copy your site URL and share.</li>
+            <li>Respond fast to WhatsApp orders.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

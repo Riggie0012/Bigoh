@@ -1418,6 +1418,12 @@ def home():
     )
 
 
+# Guided setup page
+@app.route("/setup")
+def setup_guide():
+    return render_template("setup_guide.html")
+
+
 #Single_item route
 @app.route("/single_item/<product_id>")
 def single(product_id):
