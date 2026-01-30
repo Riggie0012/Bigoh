@@ -423,6 +423,10 @@
           <h6>Users</h6>
           <div class="value">{{ metrics.users }}</div>
         </div>
+        <div class="stat-card accent-green">
+          <h6>Active Now</h6>
+          <div class="value">{{ active_count }}</div>
+        </div>
         <div class="stat-card accent-yellow">
           <h6>Products</h6>
           <div class="value">{{ metrics.products }}</div>
@@ -466,6 +470,28 @@
             <canvas id="categoryChart"></canvas>
           </div>
         </div>
+      </section>
+
+      <section class="panel mt-3">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <h5 class="mb-0">Active Visitors (last {{ active_window }} min)</h5>
+          <span class="pill">{{ active_count }} online</span>
+        </div>
+        {% if active_sessions %}
+        <div class="mini-list">
+          {% for u in active_sessions %}
+          <div class="mini-row">
+            <div>
+              <div class="fw-semibold">{{ u.username }}</div>
+              <div class="text-muted small">{{ u.path }} • {{ u.ip }}</div>
+            </div>
+            <div class="mono text-muted">{{ u.last_seen }}</div>
+          </div>
+          {% endfor %}
+        </div>
+        {% else %}
+        <div class="text-muted">No active visitors right now.</div>
+        {% endif %}
       </section>
 
       <section class="panel mt-3">

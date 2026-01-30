@@ -4,6 +4,7 @@ from urllib.parse import quote, urlparse, parse_qs
 import re
 import os
 import json
+import uuid
 from datetime import timedelta, datetime
 from functools import wraps
 import secrets
@@ -53,6 +54,7 @@ STATIC_CDN_BASE = os.getenv("STATIC_CDN_BASE", "").strip()
 LOW_STOCK_THRESHOLD = int(os.getenv("LOW_STOCK_THRESHOLD", "5"))
 LOW_STOCK_ALERT_INTERVAL_HOURS = int(os.getenv("LOW_STOCK_ALERT_INTERVAL_HOURS", "24"))
 LOW_STOCK_EMAIL_TO = os.getenv("LOW_STOCK_EMAIL_TO", "") or SUPPORT_EMAIL_ADMIN
+ACTIVE_SESSION_WINDOW_MINUTES = int(os.getenv("ACTIVE_SESSION_WINDOW_MINUTES", "5"))
 WHATSAPP_ALERTS_ENABLED = os.getenv("WHATSAPP_ALERTS_ENABLED", "0") == "1"
 WHATSAPP_ALERT_WEBHOOK = os.getenv("WHATSAPP_ALERT_WEBHOOK", "").strip()
 WHATSAPP_ALERT_TOKEN = os.getenv("WHATSAPP_ALERT_TOKEN", "").strip()
@@ -329,6 +331,61 @@ def csrf_protect():
         if not token or not session_token or not hmac.compare_digest(str(token), str(session_token)):
             app.logger.warning("CSRF blocked: %s %s from %s", request.method, request.path, _client_ip())
             return "Invalid CSRF token.", 400
+
+
+@app.before_request
+def track_active_session():
+    if request.path.startswith("/static/") or request.path == "/favicon.ico":
+        return
+    if request.method not in ("GET", "POST", "PUT", "PATCH", "DELETE", "HEAD"):
+        return
+    try:
+        session_id = session.get("active_session_id")
+        if not session_id:
+            session_id = uuid.uuid4().hex
+            session["active_session_id"] = session_id
+
+        user_id = session.get("username")
+        username = session.get("key")
+        ip_address = _client_ip()
+        user_agent = request.headers.get("User-Agent", "")[:255]
+        current_path = (request.path or "")[:255]
+        now = datetime.now()
+
+        conn = get_db_connection()
+        try:
+            with conn.cursor() as cur:
+                if not ensure_active_sessions_table(cur):
+                    return
+                conn.commit()
+                cur.execute(
+                    """
+                    INSERT INTO active_sessions
+                    (session_id, user_id, username, ip_address, user_agent, last_seen, current_path)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    ON DUPLICATE KEY UPDATE
+                        user_id=VALUES(user_id),
+                        username=VALUES(username),
+                        ip_address=VALUES(ip_address),
+                        user_agent=VALUES(user_agent),
+                        last_seen=VALUES(last_seen),
+                        current_path=VALUES(current_path)
+                    """,
+                    (
+                        session_id,
+                        user_id,
+                        username,
+                        ip_address,
+                        user_agent,
+                        now,
+                        current_path,
+                    ),
+                )
+            conn.commit()
+        finally:
+            conn.close()
+    except Exception:
+        return
 
 
 @app.after_request
@@ -1118,6 +1175,27 @@ def ensure_stock_alerts_table(cur):
             CREATE TABLE IF NOT EXISTS stock_alerts (
                 product_id INT PRIMARY KEY,
                 last_notified DATETIME
+            )
+            """
+        )
+        return True
+    except Exception:
+        return False
+
+
+def ensure_active_sessions_table(cur):
+    try:
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS active_sessions (
+                session_id VARCHAR(64) PRIMARY KEY,
+                user_id INT NULL,
+                username VARCHAR(80) NULL,
+                ip_address VARCHAR(64) NULL,
+                user_agent VARCHAR(255) NULL,
+                last_seen DATETIME NOT NULL,
+                current_path VARCHAR(255) NULL,
+                INDEX (last_seen)
             )
             """
         )
@@ -3486,6 +3564,8 @@ def admin_dashboard():
     repeat_customers = 0
     conversion_rate = 0.0
     avg_order_value = 0.0
+    active_count = 0
+    active_sessions = []
 
     try:
         conn = get_db_connection()
@@ -3618,6 +3698,42 @@ def admin_dashboard():
             pass
 
         try:
+            if ensure_active_sessions_table(cur):
+                conn.commit()
+                cutoff = datetime.now() - timedelta(minutes=ACTIVE_SESSION_WINDOW_MINUTES)
+                active_count = _scalar(
+                    cur,
+                    "SELECT COUNT(*) FROM active_sessions WHERE last_seen >= %s",
+                    (cutoff,),
+                    default=0,
+                )
+                cur.execute(
+                    """
+                    SELECT username, user_id, ip_address, last_seen, current_path
+                    FROM active_sessions
+                    WHERE last_seen >= %s
+                    ORDER BY last_seen DESC
+                    LIMIT 12
+                    """,
+                    (cutoff,),
+                )
+                active_sessions = []
+                for row in cur.fetchall() or []:
+                    last_seen = _row_at(row, 3, None)
+                    active_sessions.append(
+                        {
+                            "username": _row_at(row, 0, "") or "Guest",
+                            "user_id": _row_at(row, 1, None),
+                            "ip": _row_at(row, 2, "-"),
+                            "last_seen": last_seen.strftime("%H:%M") if last_seen else "-",
+                            "path": _row_at(row, 4, "-"),
+                        }
+                    )
+        except Exception:
+            active_count = 0
+            active_sessions = []
+
+        try:
             if ensure_flash_sale_tables(cur):
                 conn.commit()
                 cur.execute(
@@ -3706,6 +3822,9 @@ def admin_dashboard():
         recent_products=recent_products,
         low_stock=low_stock,
         top_products=top_products,
+        active_count=active_count,
+        active_sessions=active_sessions,
+        active_window=ACTIVE_SESSION_WINDOW_MINUTES,
         status_labels=json.dumps(status_labels),
         status_values=json.dumps(status_values),
         category_labels=json.dumps(category_labels),
