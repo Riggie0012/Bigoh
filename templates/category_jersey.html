@@ -22,7 +22,7 @@
         {% for item in products %}
         <div class="col-md-3 col-sm-6">
           <div class="product-grid-card">
-            <span class="verified-badge">Admin Approved</span>
+            <span class="verified-badge" aria-label="Admin Approved" title="Admin Approved"></span>
             <img src="{{ image_url(item[7]) }}" alt="{{ item[1] }}">
             <div class="p-3">
               <div class="fw-semibold">{{ item[1] }}</div>
