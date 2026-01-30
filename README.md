@@ -1,180 +1,161 @@
-# Bigoh
+﻿# Bigoh (Beginner Friendly Guide)
 
-Bigoh is a Flask-based ecommerce app with a storefront, cart/checkout, admin dashboard, flash sales, and customer reviews.
+Bigoh is a ready-made online store you can run on your computer or deploy online.
+This guide is written for beginners. Follow the steps in order and you will have a working store.
 
-## Features (everything in the app)
-- Storefront pages: home, categories, product details
-- Cart and checkout flows
-- Orders + order items tracking
-- Admin dashboard with metrics, order status updates, products management
-- Flash sale management (select items, set duration)
-- Product reviews + ratings
-- Sign-in and sign-up email notifications
-- Optional SMS notifications on sign-in
-- Optional M-Pesa STK Push integration
+## What you get
+- Storefront (home, categories, product page)
+- Cart and checkout (Pay on Delivery/WhatsApp)
+- Admin dashboard (orders, products, flash sales, reviews)
+- Reviews + ratings
+- Optional email/SMS notifications
 
-## Tech stack
-- Python + Flask
-- MySQL (via PyMySQL)
-- Bootstrap (templates)
+## What you need
+- A Windows PC (or Mac/Linux)
+- Internet connection
+- Python 3.10+
+- MySQL database (local or hosted)
 
-## Requirements
-- Python 3.10+ (recommended)
-- A MySQL database (local or hosted)
+If you do not know what MySQL is, follow the steps under "Database setup (easy)" below.
 
-## Quick start (Windows)
-1) Create and activate a virtual environment
+---
+
+# 1) Install Python (only once)
+1. Go to https://www.python.org/downloads/
+2. Download and install Python.
+3. During install, tick "Add Python to PATH".
+
+To confirm it worked, open PowerShell and run:
+```bash
+python --version
+```
+
+---
+
+# 2) Download the project
+If you already have this folder, skip this step.
+
+---
+
+# 3) Create a virtual environment (recommended)
+Open PowerShell in the project folder and run:
 ```bash
 python -m venv .venv
 .\.venv\Scripts\activate
 ```
 
-2) Install dependencies
+---
+
+# 4) Install dependencies
 ```bash
 pip install -r requirements.txt
 ```
 
-3) Create a `.env` file
+---
+
+# 5) Database setup (easy)
+You need a MySQL database. There are two options:
+
+## Option A: Use a local MySQL
+1. Install MySQL from https://dev.mysql.com/downloads/installer/
+2. Create a database (example name: bigoh)
+3. Import the schema:
 ```bash
-copy .env.example .env
+mysql -u root -p bigoh < scripts/schema.sql
 ```
 
-4) Run the app
+## Option B: Use a hosted MySQL (Railway)
+1. Create a Railway project.
+2. Add a MySQL plugin.
+3. Copy the connection string (DATABASE_URL).
+
+---
+
+# 6) Create your .env file
+In the project root, create a file called .env.
+
+Start with this minimum:
+```
+FLASK_SECRET_KEY=your_long_random_key
+DATABASE_URL=mysql://user:pass@host:3306/dbname
+```
+
+If you use local MySQL instead of DATABASE_URL, use:
+```
+DB_HOST=localhost
+DB_PORT=3306
+DB_USER=root
+DB_PASSWORD=yourpassword
+DB_NAME=bigoh
+```
+
+---
+
+# 7) Run the app
 ```bash
 python app.py
 ```
 
-Open:
+Open in your browser:
 - Storefront: http://127.0.0.1:5000/
 - Admin: http://127.0.0.1:5000/admin
 
-## Environment variables (complete list)
-Create a `.env` file in the project root and add what you need. Values are grouped by feature.
+---
 
-### Core
-- `FLASK_SECRET_KEY` (required)
-- `WHATSAPP_NUMBER` (optional; displayed in templates)
-- `ADMIN_USERS` (optional; comma-separated usernames that should be admin)
-- `FLASK_SESSION_SECURE` (optional; set `1` in production/HTTPS)
-- `PORT` (optional; used by Railway and other platforms)
-
-### Database
-Use **one** of these approaches:
-- `DATABASE_URL` (preferred; e.g. `mysql://user:pass@host:3306/dbname`)
-- `MYSQL_URL` or `DB_URL` (same format as `DATABASE_URL`)
-
-Or provide all of:
-- `DB_HOST`
-- `DB_PORT`
-- `DB_USER`
-- `DB_PASSWORD`
-- `DB_NAME`
-
-Other DB options:
-- `DB_SSL_DISABLED` (optional; set `1` to disable SSL)
-
-### Email (sign-in / sign-up notifications)
-- `EMAIL_ENABLED` (optional; `1` or `0`, default is enabled)
-- `EMAIL_FROM`
-- `EMAIL_FROM_NAME`
-- `SMTP_HOST`
-- `SMTP_PORT`
-- `SMTP_USERNAME`
-- `SMTP_PASSWORD`
-- `SMTP_USE_TLS` (optional; default `1`)
-- `SMTP_USE_SSL` (optional; default `0`)
-- `APP_BASE_URL` (optional; used for links in emails)
-
-### SMS (optional sign-in notification via Africa's Talking)
-- `AFRICASTALKING_USERNAME`
-- `AFRICASTALKING_API_KEY`
-- `DEFAULT_COUNTRY_CODE` (optional; example: `+254`)
-- `AFRICASTALKING_SENDER_ID` (optional)
-
-### M-Pesa (optional STK Push)
-- `MPESA_BASE_URL` (optional; default: `https://sandbox.safaricom.co.ke`)
-- `MPESA_CONSUMER_KEY`
-- `MPESA_CONSUMER_SECRET`
-- `MPESA_PASSKEY`
-- `MPESA_SHORT_CODE` (optional; default: `174379`)
-- `MPESA_CALLBACK_URL`
-
-## Database notes
-The app expects these tables to exist:
-- `users`
-- `products`
-- `orders`
-- `order_items`
-
-These tables are created automatically if missing:
-- `product_reviews`
-- `flash_sale_settings`
-- `flash_sale_items`
-
-If you are starting from scratch, create the DB and core tables before running the app.
-
-## Database setup (SQL)
-This repo includes a full schema file:
-```bash
-mysql -u root -p your_database < scripts/schema.sql
+# 8) Make yourself admin
+Add your username to ADMIN_USERS in .env:
 ```
-Convenience scripts (uses `DB_*` env vars from your shell):
-```bash
-# Windows PowerShell
-.\scripts\init_db.ps1
-
-# macOS/Linux
-bash scripts/init_db.sh
+ADMIN_USERS=myusername
 ```
 
-## Running in production
-This repo includes production-ready entrypoints:
-- `Procfile` (Gunicorn)
-- `wsgi.py` (Gunicorn app loader)
-- `runtime.txt` (Python version pin)
-- `railway.json` + `nixpacks.toml` (Railway/Nixpacks config)
-- `Dockerfile` (container deployments)
+Restart the app after editing .env.
 
-Run locally (production-like):
-```bash
-gunicorn wsgi:app --bind 0.0.0.0:8000
+---
+
+# Optional features (only if you want)
+
+## Email notifications
+Add SMTP settings in .env:
+```
+EMAIL_ENABLED=1
+EMAIL_FROM=you@example.com
+SMTP_HOST=smtp.example.com
+SMTP_PORT=587
+SMTP_USERNAME=you@example.com
+SMTP_PASSWORD=yourpassword
+SMTP_USE_TLS=1
 ```
 
-## Deploy to Railway (recommended)
-1) Push this repo to GitHub.
-2) Create a new Railway project and add your repo.
-3) Add a MySQL plugin in Railway and copy its connection string.
-4) Set env vars in Railway:
-   - `DATABASE_URL` (or `MYSQL_URL`) to the Railway MySQL connection string
-   - `FLASK_SECRET_KEY`
-   - `FLASK_SESSION_SECURE=1`
-   - Any optional email/SMS/M-Pesa variables you plan to use
-5) Deploy. Railway will use `railway.json` / `nixpacks.toml` or the `Procfile` automatically.
-
-Tip: If you see MySQL connection errors, make sure you used the **public** MySQL host/port or `DATABASE_URL`.
-
-## Deploy to Vercel (alternative)
-1) Push this repo to GitHub.
-2) In Vercel, import the repo.
-3) Add all required env vars in Vercel.
-4) Deploy.
-
-`vercel.json` is already included for Python deployments.
-
-## Docker (optional)
-Build and run:
-```bash
-docker build -t Bigoh .
-docker run --env-file .env -p 8000:8000 Bigoh
+## SMS notifications (Africa's Talking)
+```
+AFRICASTALKING_USERNAME=your_username
+AFRICASTALKING_API_KEY=your_api_key
 ```
 
-## Common issues
-- **Module not found**: run `pip install -r requirements.txt` in your venv.
-- **Database connection failed**: verify `DATABASE_URL` or `DB_*` values.
-- **SMS not sending**: check Africa's Talking keys.
-- **Email not sending**: check SMTP settings and `EMAIL_ENABLED=1`.
+---
 
-## Security
-- Never commit `.env` or any client secret files.
-- Rotate any secrets that were exposed.
+# Common problems (simple fixes)
+- App won't start: run pip install -r requirements.txt
+- Database error: check your DATABASE_URL or DB_* values
+- Email not sending: check SMTP details + EMAIL_ENABLED=1
 
+---
+
+# Deploy online (Railway)
+1. Push this repo to GitHub.
+2. Create a Railway project and connect the repo.
+3. Add a MySQL plugin and copy DATABASE_URL.
+4. Set env vars in Railway (DATABASE_URL + FLASK_SECRET_KEY).
+5. Deploy.
+
+---
+
+# Security tips
+- Never share your .env
+- Change any leaked passwords immediately
+
+---
+
+If you want, I can also add:
+- A one-click installer script
+- A guided setup page inside the app
