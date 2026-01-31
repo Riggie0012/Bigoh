@@ -131,6 +131,15 @@
     font-size: 12px;
   }
 
+  .zen-footer__payments--inline {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+  }
+
+  .zen-footer__payments--inline .zen-footer__badge {
+    white-space: nowrap;
+  }
+
   @media (max-width: 768px) {
     .zen-footer__bottom {
       flex-direction: column;
@@ -195,7 +204,7 @@
       <div class="zen-footer__card">
         <div class="zen-footer__title">Store Promise</div>
         <div>Quality-checked products, responsive support, and smooth checkout.</div>
-        <div class="zen-footer__payments mt-3">
+        <div class="zen-footer__payments zen-footer__payments--inline mt-3">
           <span class="zen-footer__badge">M-Pesa</span>
           <span class="zen-footer__badge">Card</span>
           <span class="zen-footer__badge">Pay on Delivery</span>
