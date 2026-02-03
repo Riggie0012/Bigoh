@@ -540,7 +540,10 @@ def handle_exception(exc):
                 exc.code,
             )
         except Exception:
-            return exc
+            return (
+                "<h1>Something went wrong</h1><p>Please try again.</p>",
+                exc.code,
+            )
     app.logger.exception("Unhandled error: %s", exc)
     if wants_json:
         return (
