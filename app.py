@@ -759,6 +759,37 @@ def table_has_column(conn, table: str, column: str) -> bool:
         return False
 
 
+def products_has_seller(conn=None) -> bool:
+    cache_key = _schema_cache_key("products", "seller")
+    cached = app.config.get(cache_key)
+    if cached is not None:
+        return cached
+    owns_conn = False
+    if conn is None:
+        conn = get_db_connection()
+        owns_conn = True
+    try:
+        has_col = table_has_column(conn, "products", "seller")
+        app.config[cache_key] = has_col
+        return has_col
+    finally:
+        if owns_conn:
+            conn.close()
+
+
+def ensure_products_schema(conn) -> bool:
+    try:
+        if products_has_seller(conn):
+            return True
+        with conn.cursor() as cur:
+            cur.execute("ALTER TABLE products ADD COLUMN seller VARCHAR(120) NULL")
+        conn.commit()
+        app.config[_schema_cache_key("products", "seller")] = True
+        return True
+    except Exception:
+        return False
+
+
 def ensure_user_verification_schema(conn) -> bool:
     try:
         with conn.cursor() as cur:
@@ -1613,6 +1644,10 @@ def single(product_id):
         if not product:
             return redirect(url_for("home"))
 
+        seller = ""
+        if products_has_seller(connection):
+            seller = _row_at(product, 8, "")
+
         reviews, avg_rating, review_count, has_seed, rating_breakdown = get_product_reviews(
             connection, product_id, session.get("key")
         )
@@ -1628,6 +1663,7 @@ def single(product_id):
     return render_template(
         "single.html",
         product=product,
+        seller=seller,
         reviews=reviews,
         avg_rating=avg_rating,
         avg_rating_int=avg_rating_int,
@@ -3527,6 +3563,7 @@ def upload():
         product_name = request.form.get("product_name", "").strip()
         category = request.form.get("category", "").strip()
         brand = request.form.get("brand", "").strip()
+        seller = request.form.get("seller", "").strip()
         price = request.form.get("price", "").strip()
         stock = request.form.get("stock", "0").strip()
         description = request.form.get("description", "").strip()
@@ -3566,13 +3603,28 @@ def upload():
         # Insert into DB
         connection = get_db_connection()
         try:
+            ensure_products_schema(connection)
             with connection.cursor() as cursor:
-                sql = """
-                    INSERT INTO products
-                    (product_name, category, brand, price, stock, description, image_url)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s)
-                """
-                cursor.execute(sql, (product_name, category, brand, price, stock, description, image_url))
+                if products_has_seller(connection):
+                    sql = """
+                        INSERT INTO products
+                        (product_name, category, brand, seller, price, stock, description, image_url)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                    """
+                    cursor.execute(
+                        sql,
+                        (product_name, category, brand, seller, price, stock, description, image_url),
+                    )
+                else:
+                    sql = """
+                        INSERT INTO products
+                        (product_name, category, brand, price, stock, description, image_url)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    """
+                    cursor.execute(
+                        sql,
+                        (product_name, category, brand, price, stock, description, image_url),
+                    )
                 connection.commit()
         finally:
             connection.close()
@@ -4173,11 +4225,18 @@ def admin_products():
     conn = get_db_connection()
     try:
         with conn.cursor() as cur:
+            ensure_products_schema(conn)
             cur.execute("SELECT * FROM products ORDER BY product_id DESC")
             products = cur.fetchall() or []
+        has_seller = products_has_seller(conn)
     finally:
         conn.close()
-    return render_template("admin_products.html", products=products)
+    return render_template(
+        "admin_products.html",
+        products=products,
+        products_has_seller=has_seller,
+        seller_index=8,
+    )
 
 
 @app.route("/admin/products/<int:product_id>/edit", methods=["GET", "POST"])
@@ -4185,6 +4244,7 @@ def admin_products():
 def admin_edit_product(product_id):
     conn = get_db_connection()
     try:
+        has_seller = ensure_products_schema(conn)
         with conn.cursor() as cur:
             cur.execute("SELECT * FROM products WHERE product_id=%s", (product_id,))
             product = cur.fetchone()
@@ -4195,6 +4255,7 @@ def admin_edit_product(product_id):
                 product_name = request.form.get("product_name", "").strip()
                 category = request.form.get("category", "").strip()
                 brand = request.form.get("brand", "").strip()
+                seller = request.form.get("seller", "").strip()
                 price = request.form.get("price", "").strip()
                 stock = request.form.get("stock", "0").strip()
                 description = request.form.get("description", "").strip()
@@ -4216,20 +4277,36 @@ def admin_edit_product(product_id):
                         compress_product_image(save_path)
                         image_url = f"images/{final_name}"
 
-                cur.execute(
-                    """
-                    UPDATE products
-                    SET product_name=%s, category=%s, brand=%s, price=%s, stock=%s, description=%s, image_url=%s
-                    WHERE product_id=%s
-                    """,
-                    (product_name, category, brand, price, stock, description, image_url, product_id),
-                )
+                if has_seller and products_has_seller(conn):
+                    cur.execute(
+                        """
+                        UPDATE products
+                        SET product_name=%s, category=%s, brand=%s, seller=%s, price=%s, stock=%s, description=%s, image_url=%s
+                        WHERE product_id=%s
+                        """,
+                        (product_name, category, brand, seller, price, stock, description, image_url, product_id),
+                    )
+                else:
+                    cur.execute(
+                        """
+                        UPDATE products
+                        SET product_name=%s, category=%s, brand=%s, price=%s, stock=%s, description=%s, image_url=%s
+                        WHERE product_id=%s
+                        """,
+                        (product_name, category, brand, price, stock, description, image_url, product_id),
+                    )
                 conn.commit()
                 return redirect(url_for("admin_products"))
     finally:
         conn.close()
 
-    return render_template("admin_product_edit.html", product=product)
+    product_seller = _row_at(product, 8, "") if has_seller else ""
+    return render_template(
+        "admin_product_edit.html",
+        product=product,
+        product_seller=product_seller,
+        products_has_seller=has_seller,
+    )
 
 
 @app.route("/admin/products/<int:product_id>/delete", methods=["POST"])

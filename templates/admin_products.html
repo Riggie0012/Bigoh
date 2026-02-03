@@ -179,6 +179,7 @@
                 <th>Name</th>
                 <th>Category</th>
                 <th>Brand</th>
+                <th>Seller</th>
                 <th>Price</th>
                 <th>Stock</th>
                 <th>Actions</th>
@@ -192,6 +193,13 @@
                 <td>{{ p[1] }}</td>
                 <td>{{ p[2] }}</td>
                 <td>{{ p[3] }}</td>
+                <td>
+                  {% if p|length > seller_index and p[seller_index] %}
+                    {{ p[seller_index] }}
+                  {% else %}
+                    <span class="text-muted">—</span>
+                  {% endif %}
+                </td>
                 <td class="text-danger mono">KES {{ "{:,.2f}".format(p[4] or 0) }}</td>
                 <td class="mono">{{ p[5] }}</td>
                 <td class="d-flex gap-2 flex-wrap">
@@ -204,7 +212,7 @@
               {% endfor %}
               {% if products|length == 0 %}
               <tr>
-                <td colspan="8" class="text-center text-muted">No products found.</td>
+                <td colspan="9" class="text-center text-muted">No products found.</td>
               </tr>
               {% endif %}
             </tbody>
