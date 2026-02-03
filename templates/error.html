@@ -1,0 +1,78 @@
+{% extends 'base.html' %}
+{% block title %}{{ title or 'Error' }}{% endblock %}
+{% block extra_head %}
+<style>
+  .error-wrap {
+    min-height: 70vh;
+    display: grid;
+    place-items: center;
+    padding: 48px 16px;
+  }
+  .error-card {
+    max-width: 560px;
+    width: 100%;
+    padding: 34px 30px;
+    text-align: center;
+    position: relative;
+    overflow: hidden;
+  }
+  .error-card::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(circle at 20% 20%, rgba(255, 178, 107, 0.2), transparent 50%);
+    pointer-events: none;
+  }
+  .error-icon {
+    width: 64px;
+    height: 64px;
+    border-radius: 50%;
+    background: rgba(255, 122, 0, 0.12);
+    color: var(--brand-1);
+    display: grid;
+    place-items: center;
+    font-weight: 800;
+    margin: 0 auto 16px;
+    font-size: 22px;
+  }
+  .error-title {
+    font-size: 1.5rem;
+    font-weight: 800;
+    margin-bottom: 6px;
+  }
+  .error-message {
+    color: var(--muted);
+    margin-bottom: 22px;
+  }
+  .error-actions {
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+  .error-meta {
+    margin-top: 14px;
+    font-size: 0.85rem;
+    color: #94a3b8;
+  }
+  @media (max-width: 576px) {
+    .error-card { padding: 28px 22px; }
+  }
+</style>
+{% endblock %}
+{% block content %}
+<div class="container error-wrap">
+  <div class="card error-card">
+    <div class="error-icon">!</div>
+    <div class="error-title">{{ title or 'Failed' }}</div>
+    <div class="error-message">{{ message or 'Service temporarily unavailable. Please try again later.' }}</div>
+    <div class="error-actions">
+      <a class="btn btn-primary" href="{{ request.full_path or '/' }}">Retry</a>
+      <a class="btn btn-outline-dark" href="{{ url_for('home') }}">Close</a>
+    </div>
+    {% if status_code %}
+    <div class="error-meta">Error {{ status_code }}</div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

@@ -337,7 +337,14 @@ def csrf_protect():
         session_token = session.get("_csrf_token", "")
         if not token or not session_token or not hmac.compare_digest(str(token), str(session_token)):
             app.logger.warning("CSRF blocked: %s %s from %s", request.method, request.path, _client_ip())
-            return "Invalid CSRF token.", 400
+            if request.headers.get("X-Requested-With") == "XMLHttpRequest" or "application/json" in request.headers.get("Accept", ""):
+                return jsonify(ok=False, message="Invalid CSRF token.", status=400), 400
+            return render_template(
+                "error.html",
+                title="Request blocked",
+                message="Invalid CSRF token. Please refresh the page and try again.",
+                status_code=400,
+            ), 400
 
 
 @app.before_request
@@ -509,11 +516,54 @@ def admin_required(view):
 
 @app.errorhandler(Exception)
 def handle_exception(exc):
+    wants_json = (
+        request.headers.get("X-Requested-With") == "XMLHttpRequest"
+        or "application/json" in request.headers.get("Accept", "")
+    )
     if isinstance(exc, HTTPException):
         app.logger.warning("HTTP error %s: %s", exc.code, exc)
-        return exc
+        if wants_json:
+            return jsonify(
+                ok=False,
+                error=exc.name,
+                message=exc.description or "We couldn't complete your request.",
+                status=exc.code,
+            ), exc.code
+        try:
+            return (
+                render_template(
+                    "error.html",
+                    title="Something went wrong",
+                    message=exc.description or "We couldn't complete your request.",
+                    status_code=exc.code,
+                ),
+                exc.code,
+            )
+        except Exception:
+            return exc
     app.logger.exception("Unhandled error: %s", exc)
-    return "Something went wrong. Please try again.", 500
+    if wants_json:
+        return (
+            jsonify(
+                ok=False,
+                error="Internal Server Error",
+                message="Service temporarily unavailable. Please try again later.",
+                status=500,
+            ),
+            500,
+        )
+    try:
+        return (
+            render_template(
+                "error.html",
+                title="Failed",
+                message="Service temporarily unavailable. Please try again later.",
+                status_code=500,
+            ),
+            500,
+        )
+    except Exception:
+        return "Something went wrong. Please try again.", 500
 
 
 
