@@ -21,6 +21,14 @@ def _smtp_config():
     password = os.getenv("SMTP_PASSWORD", "")
     use_ssl = _env_bool("SMTP_USE_SSL", False)
     use_tls = _env_bool("SMTP_USE_TLS", True)
+    timeout_env = os.getenv("SMTP_TIMEOUT", "").strip()
+    if timeout_env:
+        try:
+            timeout = float(timeout_env)
+        except ValueError:
+            timeout = 10.0
+    else:
+        timeout = 10.0
 
     port_env = os.getenv("SMTP_PORT", "")
     if port_env:
@@ -44,6 +52,7 @@ def _smtp_config():
         "use_tls": use_tls,
         "from_email": from_email,
         "from_name": from_name,
+        "timeout": timeout,
     }
 
 
@@ -117,12 +126,12 @@ def send_email(to_email: str, subject: str, text_body: str, html_body: Optional[
     try:
         if cfg["use_ssl"]:
             context = ssl.create_default_context()
-            with smtplib.SMTP_SSL(cfg["host"], cfg["port"], context=context) as server:
+            with smtplib.SMTP_SSL(cfg["host"], cfg["port"], timeout=cfg["timeout"], context=context) as server:
                 if cfg["username"] and cfg["password"]:
                     server.login(cfg["username"], cfg["password"])
                 server.send_message(msg)
         else:
-            with smtplib.SMTP(cfg["host"], cfg["port"]) as server:
+            with smtplib.SMTP(cfg["host"], cfg["port"], timeout=cfg["timeout"]) as server:
                 server.ehlo()
                 if cfg["use_tls"]:
                     context = ssl.create_default_context()
