@@ -2176,8 +2176,9 @@ def auth_google_callback():
         set_site_message("Please verify your email to continue.", "warning")
         return redirect(url_for("verify_phone"))
 
-    session.clear()
     remember_me = session.pop("google_remember_me", False)
+    next_url = _pop_next_url()
+    session.clear()
     session.permanent = remember_me
     session["key"] = username
     session["username"] = user_id
@@ -2185,7 +2186,6 @@ def auth_google_callback():
     session["is_admin"] = get_user_is_admin(user_id)
     session.pop("pending_user_id", None)
 
-    next_url = _pop_next_url()
     return redirect(next_url or url_for("home"))
 
 #Signin route
