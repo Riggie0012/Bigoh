@@ -15,7 +15,7 @@ import time
 import logging
 from logging.handlers import RotatingFileHandler
 from authlib.integrations.flask_client import OAuth
-from werkzeug.utils import secure_filename
+from werkzeug.utils import secure_filename, ProxyFix
 from werkzeug.security import generate_password_hash, check_password_hash
 import pymysql
 from dotenv import load_dotenv
@@ -41,6 +41,10 @@ ADMIN_USERS = {
     for name in os.getenv("ADMIN_USERS", "").split(",")
     if name.strip()
 }
+
+app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
+
+
 BUSINESS_NAME = os.getenv("BUSINESS_NAME", "Bigoh")
 BUSINESS_ADDRESS = os.getenv("BUSINESS_ADDRESS", "Donholm Caltex, Nairobi")
 BUSINESS_REG_NO = os.getenv("BUSINESS_REG_NO", "")
