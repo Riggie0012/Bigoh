@@ -777,14 +777,34 @@ def products_has_seller(conn=None) -> bool:
             conn.close()
 
 
+def products_has_color(conn=None) -> bool:
+    cache_key = _schema_cache_key("products", "color")
+    cached = app.config.get(cache_key)
+    if cached is not None:
+        return cached
+    owns_conn = False
+    if conn is None:
+        conn = get_db_connection()
+        owns_conn = True
+    try:
+        has_col = table_has_column(conn, "products", "color")
+        app.config[cache_key] = has_col
+        return has_col
+    finally:
+        if owns_conn:
+            conn.close()
+
+
 def ensure_products_schema(conn) -> bool:
     try:
-        if products_has_seller(conn):
-            return True
         with conn.cursor() as cur:
-            cur.execute("ALTER TABLE products ADD COLUMN seller VARCHAR(120) NULL")
+            if not products_has_seller(conn):
+                cur.execute("ALTER TABLE products ADD COLUMN seller VARCHAR(120) NULL")
+            if not products_has_color(conn):
+                cur.execute("ALTER TABLE products ADD COLUMN color VARCHAR(80) NULL")
         conn.commit()
         app.config[_schema_cache_key("products", "seller")] = True
+        app.config[_schema_cache_key("products", "color")] = True
         return True
     except Exception:
         return False
@@ -3023,12 +3043,76 @@ def advanced_product_search(raw_query):
 
 
 
-def get_products_by_category(category_name):
+def _parse_price(value):
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def get_products_by_category(category_name, filters=None):
+    filters = filters or {}
     connection = get_db_connection()
     try:
+        ensure_products_schema(connection)
+        brand = filters.get("brand", "")
+        color = filters.get("color", "")
+        min_price = _parse_price(filters.get("min_price"))
+        max_price = _parse_price(filters.get("max_price"))
+        availability = filters.get("availability", "")
+
+        where_parts = ["category = %s"]
+        params = [category_name]
+        if brand:
+            where_parts.append("brand = %s")
+            params.append(brand)
+        if color:
+            where_parts.append("color = %s")
+            params.append(color)
+        if min_price is not None:
+            where_parts.append("price >= %s")
+            params.append(min_price)
+        if max_price is not None:
+            where_parts.append("price <= %s")
+            params.append(max_price)
+        if availability == "in_stock":
+            where_parts.append("stock > 0")
+
+        where_clause = " AND ".join(where_parts)
+
         with connection.cursor() as cursor:
-            cursor.execute("SELECT * FROM products WHERE category = %s", (category_name,))
-            return cursor.fetchall()
+            cursor.execute(
+                f"SELECT * FROM products WHERE {where_clause} ORDER BY product_id DESC",
+                params,
+            )
+            products = cursor.fetchall()
+
+            cursor.execute(
+                """
+                SELECT DISTINCT brand
+                FROM products
+                WHERE category = %s AND brand IS NOT NULL AND brand <> ''
+                ORDER BY brand
+                """,
+                (category_name,),
+            )
+            brands = [row[0] for row in cursor.fetchall() or []]
+
+            if products_has_color(connection):
+                cursor.execute(
+                    """
+                    SELECT DISTINCT color
+                    FROM products
+                    WHERE category = %s AND color IS NOT NULL AND color <> ''
+                    ORDER BY color
+                    """,
+                    (category_name,),
+                )
+                colors = [row[0] for row in cursor.fetchall() or []]
+            else:
+                colors = []
+
+        return products, brands, colors
     finally:
         connection.close()
 
@@ -3046,46 +3130,102 @@ def categories():
 
 @app.route("/category/men-watch")
 def category_men_watch():
-    products = get_products_by_category("Men Watch")
+    filters = {
+        "brand": request.args.get("brand", "").strip(),
+        "color": request.args.get("color", "").strip(),
+        "min_price": request.args.get("min_price", "").strip(),
+        "max_price": request.args.get("max_price", "").strip(),
+        "availability": request.args.get("availability", "").strip(),
+    }
+    products, brands, colors = get_products_by_category("Men Watch", filters)
     conn = get_db_connection()
     try:
         ratings = get_ratings_for_products(conn, [_row_at(row, 0) for row in products])
     finally:
         conn.close()
-    return render_template("category_men_watch.html", products=products, ratings=ratings)
+    return render_template(
+        "category_men_watch.html",
+        products=products,
+        ratings=ratings,
+        brands=brands,
+        colors=colors,
+        filters=filters,
+    )
 
 
 @app.route("/category/ladies-watch")
 def category_ladies_watch():
-    products = get_products_by_category("Ladies Watch")
+    filters = {
+        "brand": request.args.get("brand", "").strip(),
+        "color": request.args.get("color", "").strip(),
+        "min_price": request.args.get("min_price", "").strip(),
+        "max_price": request.args.get("max_price", "").strip(),
+        "availability": request.args.get("availability", "").strip(),
+    }
+    products, brands, colors = get_products_by_category("Ladies Watch", filters)
     conn = get_db_connection()
     try:
         ratings = get_ratings_for_products(conn, [_row_at(row, 0) for row in products])
     finally:
         conn.close()
-    return render_template("category_ladies_watch.html", products=products, ratings=ratings)
+    return render_template(
+        "category_ladies_watch.html",
+        products=products,
+        ratings=ratings,
+        brands=brands,
+        colors=colors,
+        filters=filters,
+    )
 
 
 @app.route("/category/jersey")
 def category_jersey():
-    products = get_products_by_category("Jersey")
+    filters = {
+        "brand": request.args.get("brand", "").strip(),
+        "color": request.args.get("color", "").strip(),
+        "min_price": request.args.get("min_price", "").strip(),
+        "max_price": request.args.get("max_price", "").strip(),
+        "availability": request.args.get("availability", "").strip(),
+    }
+    products, brands, colors = get_products_by_category("Jersey", filters)
     conn = get_db_connection()
     try:
         ratings = get_ratings_for_products(conn, [_row_at(row, 0) for row in products])
     finally:
         conn.close()
-    return render_template("category_jersey.html", products=products, ratings=ratings)
+    return render_template(
+        "category_jersey.html",
+        products=products,
+        ratings=ratings,
+        brands=brands,
+        colors=colors,
+        filters=filters,
+    )
 
 
 @app.route("/category/cleaning")
 def category_cleaning():
-    products = get_products_by_category("Cleaning")
+    filters = {
+        "brand": request.args.get("brand", "").strip(),
+        "color": request.args.get("color", "").strip(),
+        "min_price": request.args.get("min_price", "").strip(),
+        "max_price": request.args.get("max_price", "").strip(),
+        "availability": request.args.get("availability", "").strip(),
+    }
+    products, brands, colors = get_products_by_category("Cleaning", filters)
     conn = get_db_connection()
     try:
         ratings = get_ratings_for_products(conn, [_row_at(row, 0) for row in products])
     finally:
         conn.close()
-    return render_template("category_cleaning.html", products=products, ratings=ratings)
+    return render_template(
+        "category_cleaning.html",
+        products=products,
+        ratings=ratings,
+        brands=brands,
+        colors=colors,
+        filters=filters,
+    )
 
 
 @app.route("/flash-sales")
@@ -3564,6 +3704,7 @@ def upload():
         category = request.form.get("category", "").strip()
         brand = request.form.get("brand", "").strip()
         seller = request.form.get("seller", "").strip()
+        color = request.form.get("color", "").strip()
         price = request.form.get("price", "").strip()
         stock = request.form.get("stock", "0").strip()
         description = request.form.get("description", "").strip()
@@ -3608,22 +3749,22 @@ def upload():
                 if products_has_seller(connection):
                     sql = """
                         INSERT INTO products
-                        (product_name, category, brand, seller, price, stock, description, image_url)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                        (product_name, category, brand, seller, color, price, stock, description, image_url)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                     """
                     cursor.execute(
                         sql,
-                        (product_name, category, brand, seller, price, stock, description, image_url),
+                        (product_name, category, brand, seller, color, price, stock, description, image_url),
                     )
                 else:
                     sql = """
                         INSERT INTO products
-                        (product_name, category, brand, price, stock, description, image_url)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s)
+                        (product_name, category, brand, color, price, stock, description, image_url)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                     """
                     cursor.execute(
                         sql,
-                        (product_name, category, brand, price, stock, description, image_url),
+                        (product_name, category, brand, color, price, stock, description, image_url),
                     )
                 connection.commit()
         finally:
@@ -3667,7 +3808,7 @@ def order_confirmation(order_id):
 
             cur.execute(
                 """
-                SELECT product_name, unit_price, quantity, line_total
+                SELECT product_id, product_name, unit_price, quantity, line_total
                 FROM order_items
                 WHERE order_id = %s
                 """,
@@ -4256,6 +4397,7 @@ def admin_edit_product(product_id):
                 category = request.form.get("category", "").strip()
                 brand = request.form.get("brand", "").strip()
                 seller = request.form.get("seller", "").strip()
+                color = request.form.get("color", "").strip()
                 price = request.form.get("price", "").strip()
                 stock = request.form.get("stock", "0").strip()
                 description = request.form.get("description", "").strip()
@@ -4281,19 +4423,19 @@ def admin_edit_product(product_id):
                     cur.execute(
                         """
                         UPDATE products
-                        SET product_name=%s, category=%s, brand=%s, seller=%s, price=%s, stock=%s, description=%s, image_url=%s
+                        SET product_name=%s, category=%s, brand=%s, seller=%s, color=%s, price=%s, stock=%s, description=%s, image_url=%s
                         WHERE product_id=%s
                         """,
-                        (product_name, category, brand, seller, price, stock, description, image_url, product_id),
+                        (product_name, category, brand, seller, color, price, stock, description, image_url, product_id),
                     )
                 else:
                     cur.execute(
                         """
                         UPDATE products
-                        SET product_name=%s, category=%s, brand=%s, price=%s, stock=%s, description=%s, image_url=%s
+                        SET product_name=%s, category=%s, brand=%s, color=%s, price=%s, stock=%s, description=%s, image_url=%s
                         WHERE product_id=%s
                         """,
-                        (product_name, category, brand, price, stock, description, image_url, product_id),
+                        (product_name, category, brand, color, price, stock, description, image_url, product_id),
                     )
                 conn.commit()
                 return redirect(url_for("admin_products"))
@@ -4301,10 +4443,12 @@ def admin_edit_product(product_id):
         conn.close()
 
     product_seller = _row_at(product, 8, "") if has_seller else ""
+    product_color = _row_at(product, 9, "") if products_has_color() else ""
     return render_template(
         "admin_product_edit.html",
         product=product,
         product_seller=product_seller,
+        product_color=product_color,
         products_has_seller=has_seller,
     )
 

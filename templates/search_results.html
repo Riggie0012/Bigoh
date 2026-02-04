@@ -240,7 +240,7 @@
                     <span class="text-muted small">({{ rating.count }})</span>
                   </div>
                   {% else %}
-                  <div class="text-muted small mb-2">No reviews yet.</div>
+                  <div class="text-muted small mb-2"><a href="/single_item/{{ item[0] }}#reviews">Be the first to review</a></div>
                   {% endif %}
                   {% if item[5] is not none and item[5]|int <= 5 %}
                   <div class="text-danger small mb-2">Low stock: {{ item[5] }} left</div>

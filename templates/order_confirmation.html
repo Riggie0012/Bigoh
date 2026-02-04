@@ -83,10 +83,15 @@
               <tbody>
                 {% for it in items %}
                 <tr>
-                  <td>{{ it[0] }}</td>
-                  <td>KES {{ "{:,.2f}".format(it[1] or 0) }}</td>
-                  <td>{{ it[2] }}</td>
-                  <td class="text-danger">KES {{ "{:,.2f}".format(it[3] or 0) }}</td>
+                  <td>
+                    {{ it[1] }}
+                    <div class="small mt-1">
+                      <a href="/single_item/{{ it[0] }}#reviews">Leave a review</a>
+                    </div>
+                  </td>
+                  <td>KES {{ "{:,.2f}".format(it[2] or 0) }}</td>
+                  <td>{{ it[3] }}</td>
+                  <td class="text-danger">KES {{ "{:,.2f}".format(it[4] or 0) }}</td>
                 </tr>
                 {% endfor %}
                 {% if items|length == 0 %}
