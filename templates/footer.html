@@ -64,8 +64,9 @@
     display: grid;
     grid-template-columns: minmax(240px, 320px) 1fr;
     gap: 24px;
-    align-items: center;
+    align-items: start;
     margin-top: 16px;
+    grid-column: 1 / -1;
   }
 
   .zen-footer__payments-strip {
@@ -74,6 +75,7 @@
     gap: 10px;
     align-items: center;
     justify-content: flex-start;
+    min-width: 360px;
   }
   .zen-footer__logo {
     height: 32px;
