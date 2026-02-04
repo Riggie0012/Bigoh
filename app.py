@@ -71,6 +71,15 @@ PAYMENT_METHODS = [
     {"label": "Apple Pay", "icon": "fa-brands fa-apple-pay"},
     {"label": "Google Pay", "icon": "fa-brands fa-google-pay"},
 ]
+PAYMENT_LOGOS = [
+    {"label": "M-Pesa", "image": "images/logo_mpesa.webp"},
+    {"label": "Airtel Money", "image": "images/loge_airtel.webp"},
+    {"label": "Visa", "image": "images/logo_visa.webp"},
+    {"label": "Mastercard", "image": "images/logo_mastercard.webp"},
+    {"label": "Google Pay", "image": "images/google-pay.png"},
+    {"label": "SSL Secure", "image": "images/SSL.webp"},
+    {"label": "McAfee Secure", "image": "images/McAfee.webp"},
+]
 LOW_STOCK_THRESHOLD = int(os.getenv("LOW_STOCK_THRESHOLD", "5"))
 LOW_STOCK_ALERT_INTERVAL_HOURS = int(os.getenv("LOW_STOCK_ALERT_INTERVAL_HOURS", "24"))
 LOW_STOCK_EMAIL_TO = os.getenv("LOW_STOCK_EMAIL_TO", "") or SUPPORT_EMAIL_ADMIN
@@ -1712,6 +1721,7 @@ def cart_count():
         support_hours=SUPPORT_HOURS,
         brand_partners=BRAND_PARTNERS,
         payment_methods=PAYMENT_METHODS,
+        payment_logos=PAYMENT_LOGOS,
     )
 
 

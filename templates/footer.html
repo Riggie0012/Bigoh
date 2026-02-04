@@ -75,6 +75,16 @@
     align-items: center;
     justify-content: flex-start;
   }
+  .zen-footer__logo {
+    height: 32px;
+    width: auto;
+    max-width: 120px;
+    object-fit: contain;
+    background: #fff;
+    border-radius: 8px;
+    padding: 6px 10px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+  }
 
   .zen-footer__card {
     background: rgba(15, 23, 42, 0.6);
@@ -223,20 +233,15 @@
         </div>
       </div>
 
-      <div class="zen-footer__promise-row">
-        <div class="zen-footer__card">
-          <div class="zen-footer__title">Store Promise</div>
-          <div>Quality-checked products, responsive support, and smooth checkout.</div>
-        </div>
+        <div class="zen-footer__promise-row">
+          <div class="zen-footer__card">
+            <div class="zen-footer__title">Store Promise</div>
+            <div>Quality-checked products, responsive support, and smooth checkout.</div>
+          </div>
         <div class="zen-footer__payments-strip">
-          {% for pm in payment_methods %}
-          <span class="zen-footer__badge">
-            {% if pm.icon %}<i class="{{ pm.icon }}"></i>{% endif %}
-            {{ pm.label }}
-          </span>
+          {% for pm in payment_logos %}
+          <img class="zen-footer__logo" src="{{ url_for('static', filename=pm.image) }}" alt="{{ pm.label }}">
           {% endfor %}
-          <span class="zen-footer__badge">Pay on Delivery</span>
-          <span class="zen-footer__badge">SSL Secure</span>
         </div>
       </div>
     </div>
