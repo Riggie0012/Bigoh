@@ -1862,7 +1862,7 @@ def single(product_id):
 
         seller = ""
         if products_has_seller(connection):
-            seller = _row_at(product, 8, "")
+            seller = _row_at(product, 9, "")
 
         reviews, avg_rating, review_count, has_seed, rating_breakdown = get_product_reviews(
             connection, product_id, session.get("key")
@@ -4889,7 +4889,7 @@ def admin_products():
         "admin_products.html",
         products=products,
         products_has_seller=has_seller,
-        seller_index=8,
+        seller_index=9,
     )
 
 
@@ -4962,8 +4962,8 @@ def admin_edit_product(product_id):
     finally:
         conn.close()
 
-    product_seller = _row_at(product, 8, "") if has_seller else ""
-    product_color = _row_at(product, 9, "") if products_has_color() else ""
+    product_seller = _row_at(product, 9, "") if has_seller else ""
+    product_color = _row_at(product, 10, "") if products_has_color() else ""
     return render_template(
         "admin_product_edit.html",
         product=product,
