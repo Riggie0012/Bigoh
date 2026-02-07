@@ -135,7 +135,7 @@
               <span class="cat-icon"><i class="fa-regular fa-folder-open"></i></span>
               {{ cat.name }}
             </span>
-            <span>&raquo;</span>
+            <span>{{ cat.count if cat.count is defined else "" }} &raquo;</span>
           </a>
         {% endfor %}
       </aside>
@@ -151,7 +151,7 @@
         <div class="cat-cards">
           {% for cat in categories %}
             <a class="cat-card product-grid-card" href="/category/{{ cat.slug }}">
-              <img src="{{ url_for('static', filename='images/' + cat.image) }}" alt="{{ cat.name }}">
+              <img src="{{ image_url(cat.image) }}" alt="{{ cat.name }}">
               <div class="fw-semibold">{{ cat.name }}</div>
             </a>
           {% endfor %}

@@ -31,15 +31,14 @@
 
             <div class="mb-3">
               <label class="form-label">Category</label>
-              <select name="category" class="form-select" required>
-                <option value="" selected disabled>Choose category...</option>
-                <option>Men Watch</option>
-                <option>Ladies Watch</option>
-                <option>Jersey</option>
-                <option>Cleaning</option>
-                <option>Shoes</option>
-                <option>Electricals</option>
-              </select>
+              <input type="text" name="category" class="form-control" list="categoryList" placeholder="Choose or type a category..." required>
+              <datalist id="categoryList">
+                {% if categories %}
+                  {% for cat in categories %}
+                    <option value="{{ cat.name }}"></option>
+                  {% endfor %}
+                {% endif %}
+              </datalist>
             </div>
 
             <div class="mb-3">

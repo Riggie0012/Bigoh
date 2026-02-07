@@ -43,14 +43,16 @@
                       <button type="button" data-bs-target="#myCarousel" data-bs-slide-to="2" aria-label="Slide 3"></button>
                   </div>
                   <!-- Wrapper for carousel items -->
+                 {% set slide_categories = carousel_categories if carousel_categories is defined else [] %}
                  <div class="carousel-inner">
                      <div class="carousel-item active">
                          <img src="{{ url_for('static', filename='files/slide.jpg') }}" class="d-block w-100" alt="Slide 1" height="420">
                          <div class="carousel-caption d-none d-md-block">
                              <span class="zen-carousel-badge">Trending</span>
-                             <h5>Premium Weekly Watches Collection</h5>
-                             <p>Stylish, reliable watches for everyday wear and special occasions</p>
-                             <a class="btn zen-carousel-btn" href="/category/men-watch">Shop Watches</a>
+                             {% set cat = slide_categories[0] if slide_categories|length > 0 else None %}
+                             <h5>{{ cat.name if cat else "Top Categories" }}</h5>
+                             <p>Explore the latest arrivals picked from your most-loved categories.</p>
+                             <a class="btn zen-carousel-btn" href="{{ '/category/' + cat.slug if cat else '/categories' }}">{{ cat.name if cat else "Shop Now" }}</a>
                              <div class="carousel-stats">
                                <div class="carousel-stat"><span>10k+</span>Happy shoppers</div>
                                <div class="carousel-stat"><span>24/7</span>Support &amp; tracking</div>
@@ -62,9 +64,10 @@
                          <img src="{{ url_for('static', filename='files/slide1.png') }}" class="d-block w-100" alt="Slide 2" height="420">
                          <div class="carousel-caption d-none d-md-block">
                              <span class="zen-carousel-badge">Hot Drop</span>
-                             <h5>Official EPL Jerseys</h5>
+                             {% set cat = slide_categories[1] if slide_categories|length > 1 else None %}
+                             <h5>{{ cat.name if cat else "Fresh Picks" }}</h5>
                              <p>Authentic designs at unbeatable prices.</p>
-                             <a class="btn zen-carousel-btn" href="/category/jersey">Shop Jerseys</a>
+                             <a class="btn zen-carousel-btn" href="{{ '/category/' + cat.slug if cat else '/categories' }}">{{ cat.name if cat else "Shop Now" }}</a>
                              <div class="carousel-stats">
                                <div class="carousel-stat"><span>10k+</span>Happy shoppers</div>
                                <div class="carousel-stat"><span>24/7</span>Support &amp; tracking</div>
@@ -76,9 +79,10 @@
                          <img src="{{ url_for('static', filename='files/slide2.jpg') }}" class="d-block w-100" alt="Slide 3" height="420">
                          <div class="carousel-caption d-none d-md-block">
                              <span class="zen-carousel-badge">Limited</span>
-                             <h5>A Watch That Lasts a Lifetime</h5>
-                             <p>Timeless designs crafted to make every moment unforgettable.</p>
-                             <a class="btn zen-carousel-btn" href="/category/ladies-watch">Explore Collection</a>
+                             {% set cat = slide_categories[2] if slide_categories|length > 2 else None %}
+                             <h5>{{ cat.name if cat else "Limited Deals" }}</h5>
+                             <p>Timeless picks crafted to make every moment unforgettable.</p>
+                             <a class="btn zen-carousel-btn" href="{{ '/category/' + cat.slug if cat else '/categories' }}">{{ cat.name if cat else "Explore" }}</a>
                              <div class="carousel-stats">
                                <div class="carousel-stat"><span>10k+</span>Happy shoppers</div>
                                <div class="carousel-stat"><span>24/7</span>Support &amp; tracking</div>

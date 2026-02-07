@@ -300,6 +300,56 @@ def image_url(path):
         return f"{STATIC_CDN_BASE.rstrip('/')}/{path.lstrip('/')}"
     return url_for("static", filename=path)
 
+def slugify_category(name: str) -> str:
+    slug = re.sub(r"[^a-z0-9]+", "-", (name or "").lower()).strip("-")
+    return slug or "category"
+
+def get_category_overview(conn=None, limit=None):
+    owns_conn = False
+    if conn is None:
+        try:
+            conn = get_db_connection()
+        except Exception:
+            return []
+        owns_conn = True
+    try:
+        with conn.cursor() as cur:
+            base_sql = """
+                SELECT c.category, c.total, p.image_url
+                FROM (
+                    SELECT category, COUNT(*) AS total, MAX(product_id) AS latest_id
+                    FROM products
+                    WHERE category IS NOT NULL AND category <> ''
+                    GROUP BY category
+                ) c
+                LEFT JOIN products p ON p.product_id = c.latest_id
+                ORDER BY c.total DESC, c.category ASC
+            """
+            params = []
+            if limit is not None and int(limit) > 0:
+                base_sql += " LIMIT %s"
+                params.append(int(limit))
+            cur.execute(base_sql, params)
+            rows = cur.fetchall() or []
+        categories = []
+        for row in rows:
+            name = str(_row_at(row, 0, "") or "").strip()
+            if not name:
+                continue
+            categories.append(
+                {
+                    "name": name,
+                    "slug": slugify_category(name),
+                    "count": int(_row_at(row, 1, 0) or 0),
+                    "image": _row_at(row, 2, "") or "images/hero.jpg",
+                }
+            )
+        return categories
+    except Exception:
+        return []
+    finally:
+        if owns_conn:
+            conn.close()
 def _row_at(row, idx, default=None):
     if row is None:
         return default
@@ -1732,11 +1782,18 @@ def cart_count():
     total_items = sum(cart.values())
     msg = session.pop("site_message", None)
     msg_level = session.pop("site_message_level", "warning")
+    nav_limit = int(os.getenv("NAV_CATEGORY_LIMIT", "6") or 6)
+    try:
+        nav_categories = get_category_overview(limit=nav_limit)
+    except Exception:
+        nav_categories = []
     return dict(
         cart_count=total_items,
         site_message=msg,
         site_message_level=msg_level,
         image_url=image_url,
+        nav_categories=nav_categories,
+        carousel_categories=nav_categories[:3],
         business_name=BUSINESS_NAME,
         business_address=BUSINESS_ADDRESS,
         business_reg_no=BUSINESS_REG_NO,
@@ -1790,25 +1847,34 @@ def has_verified_purchase(conn, user_id: int, product_id: int) -> bool:
 def home():
     connection = get_db_connection()
 
-    sql1 = "SELECT * FROM products WHERE category = 'Men Watch'"
+    category_limit = int(os.getenv("HOME_CATEGORY_LIMIT", "6") or 6)
+    items_limit = int(os.getenv("HOME_CATEGORY_ITEMS", "12") or 12)
     cursor = connection.cursor()
-    cursor.execute(sql1)
-    watches = cursor.fetchall()
-
-    sql2 = "SELECT * FROM products WHERE category = 'Ladies Watch'"
-    cursor = connection.cursor()
-    cursor.execute(sql2)
-    ladies = cursor.fetchall()
-
-    sql3 = "SELECT * FROM products WHERE category = 'Jersey'"
-    cursor = connection.cursor()
-    cursor.execute(sql3)
-    jersey = cursor.fetchall()
-
-    sql4 = "SELECT * FROM products WHERE category = 'Cleaning'"
-    cursor = connection.cursor()
-    cursor.execute(sql4)
-    foam = cursor.fetchall()
+    category_rows = get_category_overview(connection, limit=category_limit)
+    categories = []
+    for row in category_rows:
+        category_name = row.get("name", "")
+        if not category_name:
+            continue
+        cursor.execute(
+            """
+            SELECT * FROM products
+            WHERE category = %s
+            ORDER BY product_id DESC
+            LIMIT %s
+            """,
+            (category_name, items_limit),
+        )
+        items = cursor.fetchall() or []
+        categories.append(
+            {
+                "name": category_name,
+                "slug": row.get("slug") or slugify_category(category_name),
+                "items": items,
+                "image": row.get("image") or "images/hero.jpg",
+                "count": row.get("count", 0),
+            }
+        )
 
     sql5 = "SELECT * FROM products ORDER BY RAND() LIMIT 10"
     cursor = connection.cursor()
@@ -1825,18 +1891,18 @@ def home():
     flash_sale_duration_seconds = flash_state["duration_seconds"]
 
     rating_ids = []
-    for group in (watches, ladies, jersey, foam, new_products, sponsored_products, flash_sales):
+    for group in (new_products, sponsored_products, flash_sales):
         rating_ids.extend([_row_at(row, 0) for row in group] if group else [])
+    for category in categories:
+        items = category.get("items") or []
+        rating_ids.extend([_row_at(row, 0) for row in items] if items else [])
     ratings = get_ratings_for_products(connection, rating_ids)
 
     connection.close()
 
     return render_template(
         "home.html",
-        watches=watches,
-        ladies=ladies,
-        jersey=jersey,
-        foam=foam,
+        categories=categories,
         new_products=new_products,
         flash_sales=flash_sales,
         flash_sale_active=flash_sale_active,
@@ -3383,14 +3449,7 @@ def get_products_by_category(category_name, filters=None):
 
 @app.route("/categories")
 def categories():
-    categories_list = [
-        {"name": "Men Watch", "slug": "men-watch", "image": "rolex1.jpg"},
-        {"name": "Ladies Watch", "slug": "ladies-watch", "image": "3ladies1.jpg"},
-        {"name": "Jersey", "slug": "jersey", "image": "jersey1.jpg"},
-        {"name": "Cleaning", "slug": "cleaning", "image": "foam1.jpeg"},
-        {"name": "Shoes", "slug": "shoes", "image": "hero.jpg"},
-        {"name": "Electricals", "slug": "electricals", "image": "ledtouch.jpg"},
-    ]
+    categories_list = get_category_overview()
     return render_template("categories.html", categories=categories_list)
 
 
@@ -3536,6 +3595,39 @@ def category_electricals():
         conn.close()
     return render_template(
         "category_electricals.html",
+        products=products,
+        ratings=ratings,
+        brands=brands,
+        colors=colors,
+        filters=filters,
+    )
+
+@app.route("/category/<slug>")
+def category_dynamic(slug):
+    categories_list = get_category_overview()
+    category = next((c for c in categories_list if c.get("slug") == slug), None)
+    if not category:
+        set_site_message("Category not found.", "warning")
+        return redirect(url_for("categories"))
+
+    filters = {
+        "brand": request.args.get("brand", "").strip(),
+        "color": request.args.get("color", "").strip(),
+        "min_price": request.args.get("min_price", "").strip(),
+        "max_price": request.args.get("max_price", "").strip(),
+        "availability": request.args.get("availability", "").strip(),
+    }
+    products, brands, colors = get_products_by_category(category["name"], filters)
+    conn = get_db_connection()
+    try:
+        ratings = get_ratings_for_products(conn, [_row_at(row, 0) for row in products])
+    finally:
+        conn.close()
+    return render_template(
+        "category_generic.html",
+        category_name=category["name"],
+        category_slug=slug,
+        category_image=category.get("image") or "images/hero.jpg",
         products=products,
         ratings=ratings,
         brands=brands,
@@ -4058,6 +4150,7 @@ def pay_on_delivery():
 @app.route("/upload", methods=["GET", "POST"])
 @admin_required
 def upload():
+    categories_list = get_category_overview()
     if request.method == "POST":
         product_name = request.form.get("product_name", "").strip()
         category = request.form.get("category", "").strip()
@@ -4072,13 +4165,25 @@ def upload():
 
         # Basic validation
         if not product_name or not category or not price:
-            return render_template("upload.html", error="Product name, category, and price are required.")
+            return render_template(
+                "upload.html",
+                error="Product name, category, and price are required.",
+                categories=categories_list,
+            )
 
         if not file or file.filename == "":
-            return render_template("upload.html", error="Please choose an image.")
+            return render_template(
+                "upload.html",
+                error="Please choose an image.",
+                categories=categories_list,
+            )
 
         if not allowed_file(file.filename):
-            return render_template("upload.html", error="Invalid image type. Use jpg, jpeg, png, or webp.")
+            return render_template(
+                "upload.html",
+                error="Invalid image type. Use jpg, jpeg, png, or webp.",
+                categories=categories_list,
+            )
 
         # Ensure upload folder exists
         os.makedirs(app.config["UPLOAD_FOLDER"], exist_ok=True)
@@ -4129,9 +4234,13 @@ def upload():
         finally:
             connection.close()
 
-        return render_template("upload.html", success="Product uploaded successfully.")
+        return render_template(
+            "upload.html",
+            success="Product uploaded successfully.",
+            categories=categories_list,
+        )
 
-    return render_template("upload.html")
+    return render_template("upload.html", categories=categories_list)
 
 
 @app.route("/order/confirmation/<int:order_id>")

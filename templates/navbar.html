@@ -476,12 +476,13 @@
               <div class="mega-wrap">
                 <div class="category-sidebar">
                   <div class="title">Category</div>
-                  <a href="/category/men-watch"><span>Men Watch</span><span>&rsaquo;</span></a>
-                  <a href="/category/ladies-watch"><span>Ladies Watch</span><span>&rsaquo;</span></a>
-                  <a href="/category/jersey"><span>Jersey</span><span>&rsaquo;</span></a>
-                  <a href="/category/cleaning"><span>Cleaning</span><span>&rsaquo;</span></a>
-                  <a href="/category/shoes"><span>Shoes</span><span>&rsaquo;</span></a>
-                  <a href="/category/electricals"><span>Electricals</span><span>&rsaquo;</span></a>
+                  {% if nav_categories and nav_categories|length > 0 %}
+                    {% for cat in nav_categories %}
+                      <a href="/category/{{ cat.slug }}"><span>{{ cat.name }}</span><span>&rsaquo;</span></a>
+                    {% endfor %}
+                  {% else %}
+                    <a href="/categories"><span>Browse Categories</span><span>&rsaquo;</span></a>
+                  {% endif %}
                   <a href="/categories"><span>All Categories</span><span>&rsaquo;</span></a>
                 </div>
                 <div class="category-main">
@@ -491,30 +492,19 @@
                     <a href="/#flash-sales">Flash Sale</a>
                   </div>
                   <div class="category-grid">
-                    <a class="category-card" href="/category/men-watch">
-                      <img src="{{ url_for('static', filename='images/rolex1.jpg') }}" alt="Men Watch">
-                      <div class="fw-semibold">Men Watch</div>
-                    </a>
-                    <a class="category-card" href="/category/ladies-watch">
-                      <img src="{{ url_for('static', filename='images/3ladies1.jpg') }}" alt="Ladies Watch">
-                      <div class="fw-semibold">Ladies Watch</div>
-                    </a>
-                    <a class="category-card" href="/category/jersey">
-                      <img src="{{ url_for('static', filename='images/jersey1.jpg') }}" alt="Jersey">
-                      <div class="fw-semibold">Jersey</div>
-                    </a>
-                    <a class="category-card" href="/category/cleaning">
-                      <img src="{{ url_for('static', filename='images/foam1.jpeg') }}" alt="Cleaning">
-                      <div class="fw-semibold">Cleaning</div>
-                    </a>
-                    <a class="category-card" href="/category/shoes">
-                      <img src="{{ url_for('static', filename='images/hero.jpg') }}" alt="Shoes">
-                      <div class="fw-semibold">Shoes</div>
-                    </a>
-                    <a class="category-card" href="/category/electricals">
-                      <img src="{{ url_for('static', filename='images/ledtouch.jpg') }}" alt="Electricals">
-                      <div class="fw-semibold">Electricals</div>
-                    </a>
+                    {% if nav_categories and nav_categories|length > 0 %}
+                      {% for cat in nav_categories %}
+                      <a class="category-card" href="/category/{{ cat.slug }}">
+                        <img src="{{ image_url(cat.image) }}" alt="{{ cat.name }}">
+                        <div class="fw-semibold">{{ cat.name }}</div>
+                      </a>
+                      {% endfor %}
+                    {% else %}
+                      <a class="category-card" href="/categories">
+                        <img src="{{ url_for('static', filename='images/hero.jpg') }}" alt="Categories">
+                        <div class="fw-semibold">Browse Categories</div>
+                      </a>
+                    {% endif %}
                   </div>
                 </div>
               </div>
@@ -548,12 +538,13 @@
               </form>
               <div class="zen-trending d-none d-lg-flex">
                 Trending:
-                <a class="zen-chip" href="/category/men-watch">Men Watch</a>
-                <a class="zen-chip" href="/category/ladies-watch">Ladies Watch</a>
-                <a class="zen-chip" href="/category/jersey">Jersey</a>
-                <a class="zen-chip" href="/category/cleaning">Cleaning</a>
-                <a class="zen-chip" href="/category/shoes">Shoes</a>
-                <a class="zen-chip" href="/category/electricals">Electricals</a>
+                {% if nav_categories and nav_categories|length > 0 %}
+                  {% for cat in nav_categories %}
+                    <a class="zen-chip" href="/category/{{ cat.slug }}">{{ cat.name }}</a>
+                  {% endfor %}
+                {% else %}
+                  <a class="zen-chip" href="/categories">All Categories</a>
+                {% endif %}
               </div>
             </div>
 
