@@ -1933,6 +1933,7 @@ def home():
 
     category_limit = int(os.getenv("HOME_CATEGORY_LIMIT", "6") or 6)
     items_limit = int(os.getenv("HOME_CATEGORY_ITEMS", "12") or 12)
+    new_limit = int(os.getenv("NEW_PRODUCTS_LIMIT", "10") or 10)
     cursor = connection.cursor()
     category_rows = get_category_overview(connection, limit=category_limit)
     categories = []
@@ -1960,9 +1961,12 @@ def home():
             }
         )
 
-    sql5 = "SELECT * FROM products ORDER BY RAND() LIMIT 10"
+    if table_has_column(connection, "products", "created_at"):
+        sql5 = "SELECT * FROM products ORDER BY created_at DESC, product_id DESC LIMIT %s"
+    else:
+        sql5 = "SELECT * FROM products ORDER BY product_id DESC LIMIT %s"
     cursor = connection.cursor()
-    cursor.execute(sql5)
+    cursor.execute(sql5, (new_limit,))
     new_products = cursor.fetchall()
 
     sponsored_products = get_sponsored_products(connection, limit=8)
