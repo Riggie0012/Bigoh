@@ -403,6 +403,10 @@
         <form class="search" method="GET" action="/admin">
           <input type="text" name="q" value="{{ search }}" placeholder="Search by order, customer, or location...">
         </form>
+        <form method="POST" action="/admin/migrate-uploads" onsubmit="return confirm('Migrate local static images into the upload volume now?');">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="btn btn-sm btn-outline-light" type="submit">Migrate Uploads</button>
+        </form>
       </div>
 
       {% if error %}

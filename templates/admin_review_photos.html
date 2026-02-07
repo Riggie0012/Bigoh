@@ -109,7 +109,7 @@
               <td>{{ r[4] }}★</td>
               <td>{{ r[5] }}</td>
               <td>
-                <img src="{{ url_for('static', filename=r[6]) }}" alt="Review photo" class="review-photo">
+                <img src="{{ image_url(r[6]) }}" alt="Review photo" class="review-photo">
               </td>
               <td>
                 <form method="POST" action="/admin/reviews/{{ r[0] }}/approve" class="d-inline">

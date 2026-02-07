@@ -5,6 +5,7 @@ import re
 import os
 import json
 import uuid
+import shutil
 from datetime import timedelta, datetime
 from functools import wraps
 import secrets
@@ -128,10 +129,14 @@ RATE_LIMITS = {
 _rate_store = {}
 
 
-UPLOAD_FOLDER = os.path.join("static", "images")
-REVIEW_UPLOAD_FOLDER = os.path.join("static", "review_photos")
+DEFAULT_UPLOAD_ROOT = "/data/uploads" if os.path.isdir("/data/uploads") else "static"
+UPLOAD_ROOT = os.getenv("UPLOAD_ROOT", DEFAULT_UPLOAD_ROOT).strip() or DEFAULT_UPLOAD_ROOT
+UPLOAD_FOLDER = os.path.join(UPLOAD_ROOT, "images")
+REVIEW_UPLOAD_FOLDER = os.path.join(UPLOAD_ROOT, "review_photos")
 ALLOWED_EXTENSIONS = {"png", "jpg", "jpeg", "webp"}
 app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
+app.config["UPLOAD_ROOT"] = UPLOAD_ROOT
+app.config["REVIEW_UPLOAD_FOLDER"] = REVIEW_UPLOAD_FOLDER
 app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 app.config["SESSION_COOKIE_SECURE"] = os.getenv("FLASK_SESSION_SECURE", "0") == "1"
@@ -278,6 +283,17 @@ def compress_image(
         return
 
 
+def _uploads_use_static() -> bool:
+    if not UPLOAD_ROOT:
+        return True
+    if os.path.isabs(UPLOAD_ROOT):
+        try:
+            return os.path.normpath(UPLOAD_ROOT) == os.path.normpath(app.static_folder)
+        except Exception:
+            return False
+    return os.path.normpath(UPLOAD_ROOT) == "static"
+
+
 def image_url(path):
     if not path:
         return url_for("static", filename="images/logo.jpeg")
@@ -293,12 +309,67 @@ def image_url(path):
     if path.startswith("static/"):
         path = path[len("static/") :]
 
-    if not path.startswith("images/"):
+    if not (path.startswith("images/") or path.startswith("review_photos/")):
         path = f"images/{path}"
 
     if STATIC_CDN_BASE:
         return f"{STATIC_CDN_BASE.rstrip('/')}/{path.lstrip('/')}"
+    if _uploads_use_static():
+        return url_for("static", filename=path)
+    upload_root = app.config.get("UPLOAD_ROOT", UPLOAD_ROOT)
+    try:
+        if os.path.isfile(os.path.join(upload_root, path)):
+            return url_for("uploaded_file", filename=path)
+    except Exception:
+        pass
     return url_for("static", filename=path)
+
+
+def _migrate_static_uploads():
+    upload_root = app.config.get("UPLOAD_ROOT", UPLOAD_ROOT)
+    if not upload_root:
+        return {"error": "Upload root is not configured."}
+    if _uploads_use_static():
+        return {"error": "Uploads already use the static folder; migration not needed."}
+    if not os.path.isdir(upload_root):
+        return {"error": f"Upload root '{upload_root}' is not available."}
+
+    marker_path = os.path.join(upload_root, ".migrated_static_assets")
+    if os.path.isfile(marker_path):
+        return {"error": "Migration already completed."}
+
+    copied = 0
+    skipped = 0
+    errors = 0
+    for subdir in ("images", "review_photos"):
+        src_dir = os.path.join("static", subdir)
+        if not os.path.isdir(src_dir):
+            continue
+        dest_dir = os.path.join(upload_root, subdir)
+        os.makedirs(dest_dir, exist_ok=True)
+        for root, _, files in os.walk(src_dir):
+            rel_root = os.path.relpath(root, src_dir)
+            for filename in files:
+                src_path = os.path.join(root, filename)
+                rel_path = filename if rel_root == "." else os.path.join(rel_root, filename)
+                dest_path = os.path.join(dest_dir, rel_path)
+                os.makedirs(os.path.dirname(dest_path), exist_ok=True)
+                if os.path.exists(dest_path):
+                    skipped += 1
+                    continue
+                try:
+                    shutil.copy2(src_path, dest_path)
+                    copied += 1
+                except Exception:
+                    errors += 1
+
+    try:
+        with open(marker_path, "w", encoding="utf-8") as handle:
+            handle.write(f"migrated_at={datetime.utcnow().isoformat()}Z\n")
+    except Exception:
+        pass
+
+    return {"copied": copied, "skipped": skipped, "errors": errors}
 
 def slugify_category(name: str) -> str:
     slug = re.sub(r"[^a-z0-9]+", "-", (name or "").lower()).strip("-")
@@ -482,7 +553,20 @@ def add_cache_headers(response):
             "Cache-Control",
             "public, max-age=31536000, immutable",
         )
+    if request.path.startswith("/uploads/"):
+        response.headers.setdefault(
+            "Cache-Control",
+            "public, max-age=31536000, immutable",
+        )
     return response
+
+
+@app.route("/uploads/<path:filename>")
+def uploaded_file(filename):
+    return send_from_directory(
+        app.config.get("UPLOAD_ROOT", UPLOAD_ROOT),
+        filename,
+    )
 
 
 @app.route("/favicon.ico")
@@ -3752,7 +3836,8 @@ def admin_review_photo_reject(review_id):
 
     if photo_path:
         try:
-            full_path = os.path.join("static", photo_path)
+            base_root = app.config.get("UPLOAD_ROOT", UPLOAD_ROOT)
+            full_path = os.path.join(base_root, photo_path)
             if os.path.isfile(full_path):
                 os.remove(full_path)
         except Exception:
@@ -4713,6 +4798,24 @@ def admin_dashboard():
         flash_duration_hours=flash_duration_hours,
         flash_duration_minutes=flash_duration_minutes,
     )
+
+
+@app.route("/admin/migrate-uploads", methods=["POST"])
+@admin_required
+def admin_migrate_uploads():
+    result = _migrate_static_uploads()
+    if "error" in result:
+        set_site_message(result["error"], "warning")
+    else:
+        copied = result.get("copied", 0)
+        skipped = result.get("skipped", 0)
+        errors = result.get("errors", 0)
+        level = "success" if errors == 0 else "warning"
+        set_site_message(
+            f"Upload migration complete: copied {copied}, skipped {skipped}, errors {errors}.",
+            level,
+        )
+    return redirect(url_for("admin_dashboard"))
 
 
 @app.route("/admin/flash-sale", methods=["GET", "POST"])
