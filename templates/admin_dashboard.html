@@ -418,10 +418,10 @@
             <input type="hidden" name="limit" value="200">
             <button class="btn btn-sm btn-outline-light" type="submit">Scan Cloudinary</button>
           </form>
-          <form method="POST" action="/admin/cloudinary-cleanup" onsubmit="return confirm('Delete scanned duplicate assets from Cloudinary?');">
+          <form method="POST" action="/admin/cloudinary-cleanup" onsubmit="return confirm('Delete duplicate images (same content) not needed by the database?');">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-            <input type="hidden" name="limit" value="200">
-            <button class="btn btn-sm btn-outline-danger" type="submit">Delete Duplicates</button>
+            <input type="hidden" name="limit" value="500">
+            <button class="btn btn-sm btn-outline-danger" type="submit">Delete Duplicate Images</button>
           </form>
         </div>
       </div>

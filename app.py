@@ -621,6 +621,108 @@ def _cloudinary_delete_public_ids(public_ids, batch_size: int = 100):
             errors += len(chunk)
     return {"deleted": deleted, "errors": errors}
 
+
+def _cloudinary_public_id_from_url(url: str) -> Optional[str]:
+    if not url or not isinstance(url, str):
+        return None
+    if "res.cloudinary.com" not in url or "/image/upload/" not in url:
+        return None
+    try:
+        tail = url.split("/image/upload/", 1)[1]
+        # strip version segment like v123/
+        if tail.startswith("v") and "/" in tail:
+            version_part, rest = tail.split("/", 1)
+            if version_part[1:].isdigit():
+                tail = rest
+        # drop extension
+        if "." in tail:
+            tail = ".".join(tail.split(".")[:-1])
+        return tail.strip("/")
+    except Exception:
+        return None
+
+
+def _cloudinary_db_public_ids(conn) -> set:
+    ids = set()
+    try:
+        with conn.cursor() as cur:
+            try:
+                cur.execute("SELECT image_url FROM products WHERE image_url IS NOT NULL")
+                for row in cur.fetchall() or []:
+                    pid = _cloudinary_public_id_from_url(_row_at(row, 0, ""))
+                    if pid:
+                        ids.add(pid)
+            except Exception:
+                pass
+            try:
+                cur.execute("SELECT review_photo FROM product_reviews WHERE review_photo IS NOT NULL")
+                for row in cur.fetchall() or []:
+                    pid = _cloudinary_public_id_from_url(_row_at(row, 0, ""))
+                    if pid:
+                        ids.add(pid)
+            except Exception:
+                pass
+    except Exception:
+        pass
+    return ids
+
+
+def _cloudinary_delete_duplicate_content(max_results: int = 500):
+    if not USE_CLOUDINARY or not cloudinary:
+        return {"error": "Cloudinary is not configured."}
+    conn = get_db_connection()
+    try:
+        referenced = _cloudinary_db_public_ids(conn)
+    finally:
+        conn.close()
+
+    resources = []
+    for folder in ("bigoh/products", "bigoh/reviews"):
+        resp = _cloudinary_list_folder(folder, max_results=max_results)
+        if "error" in resp:
+            return {"error": resp["error"]}
+        resources.extend(resp.get("resources", []))
+
+    # group by content etag if available, else by bytes+dimensions
+    groups = {}
+    for res in resources:
+        etag = res.get("etag")
+        if etag:
+            key = f"etag:{etag}"
+        else:
+            key = f"sig:{res.get('bytes')}:{res.get('width')}:{res.get('height')}"
+        groups.setdefault(key, []).append(res)
+
+    to_delete = []
+    kept = 0
+    for items in groups.values():
+        if len(items) <= 1:
+            kept += len(items)
+            continue
+        # Prefer keeping any referenced public_id
+        referenced_items = [r for r in items if r.get("public_id") in referenced]
+        if referenced_items:
+            keep_ids = {r.get("public_id") for r in referenced_items}
+        else:
+            # keep the first item (older first if created_at present)
+            items_sorted = sorted(items, key=lambda r: r.get("created_at") or "")
+            keep_ids = {items_sorted[0].get("public_id")}
+        for r in items:
+            pid = r.get("public_id")
+            if pid in keep_ids:
+                kept += 1
+            else:
+                to_delete.append(pid)
+
+    if not to_delete:
+        return {"deleted": 0, "errors": 0, "kept": kept, "scanned": len(resources)}
+
+    delete_result = _cloudinary_delete_public_ids(to_delete)
+    if "error" in delete_result:
+        return delete_result
+    delete_result.update({"kept": kept, "scanned": len(resources)})
+    return delete_result
+
 def slugify_category(name: str) -> str:
     slug = re.sub(r"[^a-z0-9]+", "-", (name or "").lower()).strip("-")
     return slug or "category"
@@ -5137,27 +5239,22 @@ def admin_cloudinary_duplicates():
 @app.route("/admin/cloudinary-cleanup", methods=["POST"])
 @admin_required
 def admin_cloudinary_cleanup():
-    dupes = session.get("cloudinary_duplicates", []) or []
-    if not dupes:
-        set_site_message("No cached duplicates to delete. Run scan first.", "warning")
-        return redirect(url_for("admin_dashboard"))
     try:
-        max_delete = int(request.form.get("limit", "200") or 200)
+        limit = int(request.form.get("limit", "500") or 500)
     except ValueError:
-        max_delete = 200
-    max_delete = max(1, min(500, max_delete))
-    target = dupes[:max_delete]
-    result = _cloudinary_delete_public_ids(target)
+        limit = 500
+    limit = max(10, min(1000, limit))
+    result = _cloudinary_delete_duplicate_content(max_results=limit)
     if "error" in result:
         set_site_message(result["error"], "warning")
     else:
         deleted = result.get("deleted", 0)
         errors = result.get("errors", 0)
-        remaining = dupes[max_delete:]
-        session["cloudinary_duplicates"] = remaining
+        kept = result.get("kept", 0)
+        scanned = result.get("scanned", 0)
         level = "success" if errors == 0 else "warning"
         set_site_message(
-            f"Cloudinary cleanup: deleted {deleted}, errors {errors}. Remaining cached: {len(remaining)}.",
+            f"Cloudinary cleanup complete: scanned {scanned}, kept {kept}, deleted {deleted}, errors {errors}.",
             level,
         )
     return redirect(url_for("admin_dashboard"))
