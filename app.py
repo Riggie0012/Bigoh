@@ -95,6 +95,7 @@ WHATSAPP_ALERT_TOKEN = os.getenv("WHATSAPP_ALERT_TOKEN", "").strip()
 WHATSAPP_ALERT_TO = os.getenv("WHATSAPP_ALERT_TO", "").strip() or SUPPORT_WHATSAPP
 WHATSAPP_RECEIPTS_ENABLED = os.getenv("WHATSAPP_RECEIPTS_ENABLED", "0") == "1"
 WHATSAPP_STATUS_UPDATES_ENABLED = os.getenv("WHATSAPP_STATUS_UPDATES_ENABLED", "1") == "1"
+CRON_SECRET = os.getenv("CRON_SECRET", "").strip()
 REVIEW_AUTO_APPROVE = os.getenv("REVIEW_AUTO_APPROVE", "0") == "1"
 REVIEW_TRUSTED_USERS = {
     u.strip().lower()
@@ -823,6 +824,13 @@ def _pop_next_url():
     return next_url
 
 
+def _cron_authorized() -> bool:
+    if not CRON_SECRET:
+        return False
+    token = request.headers.get("X-Task-Secret") or request.args.get("token", "")
+    return bool(token and hmac.compare_digest(str(token), str(CRON_SECRET)))
+
+
 @app.before_request
 def csrf_protect():
     if request.method in ("POST", "PUT", "PATCH", "DELETE"):
@@ -929,6 +937,41 @@ def favicon():
         "favicon.ico",
         mimetype="image/x-icon",
     )
+
+
+@app.route("/tasks/low-stock", methods=["GET", "POST"])
+def task_low_stock():
+    if not _cron_authorized():
+        return "Unauthorized", 401
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT product_id, product_name, category, price, stock, image_url
+                FROM products
+                WHERE stock <= %s
+                ORDER BY stock ASC, product_id DESC
+                """,
+                (LOW_STOCK_THRESHOLD,),
+            )
+            low_stock = cur.fetchall() or []
+        send_low_stock_alerts(conn, low_stock)
+    finally:
+        conn.close()
+    return jsonify(ok=True, low_stock=len(low_stock))
+
+
+@app.route("/tasks/back-in-stock", methods=["GET", "POST"])
+def task_back_in_stock():
+    if not _cron_authorized():
+        return "Unauthorized", 401
+    conn = get_db_connection()
+    try:
+        processed = process_back_in_stock_alerts(conn)
+    finally:
+        conn.close()
+    return jsonify(ok=True, processed=processed)
 
 def _parse_db_url(db_url: str) -> dict:
     parsed = urlparse(db_url)
@@ -2108,6 +2151,35 @@ def send_back_in_stock_alerts(conn, product_id: int, product_name: str):
                 conn.commit()
     except Exception:
         return
+
+
+def process_back_in_stock_alerts(conn, limit: int = 200):
+    try:
+        with conn.cursor() as cur:
+            if not ensure_back_in_stock_alerts_table(cur):
+                return 0
+            conn.commit()
+            cur.execute(
+                """
+                SELECT b.product_id, p.product_name
+                FROM back_in_stock_alerts b
+                JOIN products p ON p.product_id = b.product_id
+                WHERE b.notified_at IS NULL
+                  AND p.stock > 0
+                GROUP BY b.product_id, p.product_name
+                LIMIT %s
+                """,
+                (limit,),
+            )
+            rows = cur.fetchall() or []
+            for row in rows:
+                pid = int(_row_at(row, 0, 0) or 0)
+                name = _row_at(row, 1, "") or "Item"
+                if pid:
+                    send_back_in_stock_alerts(conn, pid, name)
+            return len(rows)
+    except Exception:
+        return 0
 
 
 def get_sponsored_products(conn, limit: int = 8):
@@ -5670,6 +5742,16 @@ def admin_edit_product(product_id):
                     new_stock = int(stock or 0)
                 except ValueError:
                     new_stock = 0
+                if old_stock > 0 and new_stock <= 0:
+                    try:
+                        with conn.cursor() as alert_cur:
+                            alert_cur.execute(
+                                "UPDATE back_in_stock_alerts SET notified_at = NULL WHERE product_id = %s",
+                                (product_id,),
+                            )
+                        conn.commit()
+                    except Exception:
+                        pass
                 if old_stock <= 0 and new_stock > 0:
                     send_back_in_stock_alerts(conn, product_id, product_name)
                 return redirect(url_for("admin_products"))
