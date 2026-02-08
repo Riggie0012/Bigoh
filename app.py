@@ -15,6 +15,7 @@ import hmac
 import time
 import logging
 from logging.handlers import RotatingFileHandler
+from typing import Optional
 from authlib.integrations.flask_client import OAuth
 from werkzeug.utils import secure_filename
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -25,6 +26,11 @@ try:
 except Exception:
     Image = None
     ImageOps = None
+try:
+    import cloudinary
+    import cloudinary.uploader
+except Exception:
+    cloudinary = None
 
 load_dotenv()
 import mailer
@@ -47,6 +53,17 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 
 app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
 
+if USE_CLOUDINARY:
+    if os.getenv("CLOUDINARY_URL"):
+        cloudinary.config(secure=True)
+    else:
+        cloudinary.config(
+            cloud_name=os.getenv("CLOUDINARY_CLOUD_NAME"),
+            api_key=os.getenv("CLOUDINARY_API_KEY"),
+            api_secret=os.getenv("CLOUDINARY_API_SECRET"),
+            secure=True,
+        )
+
 
 
 BUSINESS_NAME = os.getenv("BUSINESS_NAME", "Bigoh")
@@ -59,6 +76,7 @@ SUPPORT_PHONE = os.getenv("SUPPORT_PHONE", "0759 808 915")
 SUPPORT_WHATSAPP = os.getenv("SUPPORT_WHATSAPP", "254759808915")
 SUPPORT_HOURS = os.getenv("SUPPORT_HOURS", "Daily 8:00am - 8:00pm EAT")
 STATIC_CDN_BASE = os.getenv("STATIC_CDN_BASE", "").strip()
+USE_CLOUDINARY = bool((os.getenv("CLOUDINARY_URL") or os.getenv("CLOUDINARY_CLOUD_NAME")) and cloudinary)
 LOYALTY_ENABLED = os.getenv("LOYALTY_ENABLED", "1") == "1"
 LOYALTY_REPEAT_ORDERS_MIN = int(os.getenv("LOYALTY_REPEAT_ORDERS_MIN", "2"))
 LOYALTY_REPEAT_DISCOUNT_PCT = float(os.getenv("LOYALTY_REPEAT_DISCOUNT_PCT", "5"))
@@ -294,6 +312,40 @@ def _uploads_use_static() -> bool:
     return os.path.normpath(UPLOAD_ROOT) == "static"
 
 
+def _cloudinary_upload(file_storage, folder: str) -> Optional[str]:
+    if not USE_CLOUDINARY or not cloudinary:
+        return None
+    try:
+        result = cloudinary.uploader.upload(
+            file_storage,
+            folder=folder,
+            resource_type="image",
+            overwrite=False,
+            unique_filename=True,
+        )
+        return result.get("secure_url") or result.get("url")
+    except Exception:
+        return None
+
+
+def _cloudinary_upload_path(path: str, folder: str) -> Optional[str]:
+    if not USE_CLOUDINARY or not cloudinary:
+        return None
+    if not path or not os.path.isfile(path):
+        return None
+    try:
+        result = cloudinary.uploader.upload(
+            path,
+            folder=folder,
+            resource_type="image",
+            overwrite=False,
+            unique_filename=True,
+        )
+        return result.get("secure_url") or result.get("url")
+    except Exception:
+        return None
+
+
 def image_url(path):
     if not path:
         return url_for("static", filename="images/logo.jpeg")
@@ -368,6 +420,99 @@ def _migrate_static_uploads():
             handle.write(f"migrated_at={datetime.utcnow().isoformat()}Z\n")
     except Exception:
         pass
+
+    return {"copied": copied, "skipped": skipped, "errors": errors}
+
+
+def _resolve_local_upload_path(path: str) -> Optional[str]:
+    if not path:
+        return None
+    if str(path).startswith(("http://", "https://")):
+        return None
+    normalized = str(path).lstrip("/")
+    if normalized.startswith("static/"):
+        normalized = normalized[len("static/") :]
+    upload_root = app.config.get("UPLOAD_ROOT", UPLOAD_ROOT)
+    candidate = os.path.join(upload_root, normalized)
+    if os.path.isfile(candidate):
+        return candidate
+    fallback = os.path.join("static", normalized)
+    if os.path.isfile(fallback):
+        return fallback
+    return None
+
+
+def _migrate_cloudinary_assets():
+    if not USE_CLOUDINARY:
+        return {"error": "Cloudinary is not configured."}
+
+    copied = 0
+    skipped = 0
+    errors = 0
+
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cur:
+            try:
+                cur.execute("SELECT product_id, image_url FROM products")
+                rows = cur.fetchall() or []
+            except Exception:
+                rows = []
+
+            for row in rows:
+                product_id = _row_at(row, 0)
+                image_url = _row_at(row, 1, "")
+                if not image_url or str(image_url).startswith(("http://", "https://")):
+                    skipped += 1
+                    continue
+                local_path = _resolve_local_upload_path(image_url)
+                if not local_path:
+                    errors += 1
+                    continue
+                new_url = _cloudinary_upload_path(local_path, "bigoh/products")
+                if not new_url:
+                    errors += 1
+                    continue
+                try:
+                    cur.execute(
+                        "UPDATE products SET image_url = %s WHERE product_id = %s",
+                        (new_url, product_id),
+                    )
+                    copied += 1
+                except Exception:
+                    errors += 1
+
+            try:
+                cur.execute("SELECT id, review_photo FROM product_reviews WHERE review_photo IS NOT NULL")
+                review_rows = cur.fetchall() or []
+            except Exception:
+                review_rows = []
+
+            for row in review_rows:
+                review_id = _row_at(row, 0)
+                review_photo = _row_at(row, 1, "")
+                if not review_photo or str(review_photo).startswith(("http://", "https://")):
+                    skipped += 1
+                    continue
+                local_path = _resolve_local_upload_path(review_photo)
+                if not local_path:
+                    errors += 1
+                    continue
+                new_url = _cloudinary_upload_path(local_path, "bigoh/reviews")
+                if not new_url:
+                    errors += 1
+                    continue
+                try:
+                    cur.execute(
+                        "UPDATE product_reviews SET review_photo = %s WHERE id = %s",
+                        (new_url, review_id),
+                    )
+                    copied += 1
+                except Exception:
+                    errors += 1
+        conn.commit()
+    finally:
+        conn.close()
 
     return {"copied": copied, "skipped": skipped, "errors": errors}
 
@@ -2131,15 +2276,21 @@ def add_product_review(product_id):
             if photo and photo.filename:
                 if not allowed_file(photo.filename):
                     return redirect(url_for("single", product_id=product_id, review="photo-type"))
-                os.makedirs(REVIEW_UPLOAD_FOLDER, exist_ok=True)
-                ext = os.path.splitext(photo.filename)[1].lower()
-                safe_name = secure_filename(os.path.splitext(photo.filename)[0]) or "review"
-                token = secrets.token_hex(6)
-                filename = f"review_{product_id}_{user_id}_{safe_name}_{token}{ext}"
-                save_path = os.path.join(REVIEW_UPLOAD_FOLDER, filename)
-                photo.save(save_path)
-                compress_image(save_path)
-                photo_path = f"review_photos/{filename}"
+                photo_path = _cloudinary_upload(photo, "bigoh/reviews") if USE_CLOUDINARY else None
+                if not photo_path:
+                    try:
+                        photo.stream.seek(0)
+                    except Exception:
+                        pass
+                    os.makedirs(REVIEW_UPLOAD_FOLDER, exist_ok=True)
+                    ext = os.path.splitext(photo.filename)[1].lower()
+                    safe_name = secure_filename(os.path.splitext(photo.filename)[0]) or "review"
+                    token = secrets.token_hex(6)
+                    filename = f"review_{product_id}_{user_id}_{safe_name}_{token}{ext}"
+                    save_path = os.path.join(REVIEW_UPLOAD_FOLDER, filename)
+                    photo.save(save_path)
+                    compress_image(save_path)
+                    photo_path = f"review_photos/{filename}"
                 if REVIEW_AUTO_APPROVE or _is_trusted_review_user(name):
                     photo_approved = 1
 
@@ -3838,7 +3989,7 @@ def admin_review_photo_reject(review_id):
     finally:
         conn.close()
 
-    if photo_path:
+    if photo_path and not str(photo_path).startswith(("http://", "https://")):
         try:
             base_root = app.config.get("UPLOAD_ROOT", UPLOAD_ROOT)
             full_path = os.path.join(base_root, photo_path)
@@ -4274,25 +4425,34 @@ def upload():
                 categories=categories_list,
             )
 
-        # Ensure upload folder exists
-        os.makedirs(app.config["UPLOAD_FOLDER"], exist_ok=True)
+        image_url = None
+        if USE_CLOUDINARY:
+            image_url = _cloudinary_upload(file, "bigoh/products")
 
-        # Save image with safe filename
-        filename = secure_filename(file.filename)
-        # avoid overwriting
-        base, ext = os.path.splitext(filename)
-        i = 1
-        final_name = filename
-        while os.path.exists(os.path.join(app.config["UPLOAD_FOLDER"], final_name)):
-            final_name = f"{base}_{i}{ext}"
-            i += 1
+        if not image_url:
+            try:
+                file.stream.seek(0)
+            except Exception:
+                pass
+            # Ensure upload folder exists
+            os.makedirs(app.config["UPLOAD_FOLDER"], exist_ok=True)
 
-        save_path = os.path.join(app.config["UPLOAD_FOLDER"], final_name)
-        file.save(save_path)
-        compress_product_image(save_path)
+            # Save image with safe filename
+            filename = secure_filename(file.filename)
+            # avoid overwriting
+            base, ext = os.path.splitext(filename)
+            i = 1
+            final_name = filename
+            while os.path.exists(os.path.join(app.config["UPLOAD_FOLDER"], final_name)):
+                final_name = f"{base}_{i}{ext}"
+                i += 1
 
-        # Store relative path in DB (matches how you render: /static/....)
-        image_url = f"images/{final_name}"  # because it's inside static/images/
+            save_path = os.path.join(app.config["UPLOAD_FOLDER"], final_name)
+            file.save(save_path)
+            compress_product_image(save_path)
+
+            # Store relative path in DB (matches how you render: /static/....)
+            image_url = f"images/{final_name}"  # because it's inside static/images/
 
         # Insert into DB
         connection = get_db_connection()
@@ -4822,6 +4982,24 @@ def admin_migrate_uploads():
     return redirect(url_for("admin_dashboard"))
 
 
+@app.route("/admin/migrate-cloudinary", methods=["POST"])
+@admin_required
+def admin_migrate_cloudinary():
+    result = _migrate_cloudinary_assets()
+    if "error" in result:
+        set_site_message(result["error"], "warning")
+    else:
+        copied = result.get("copied", 0)
+        skipped = result.get("skipped", 0)
+        errors = result.get("errors", 0)
+        level = "success" if errors == 0 else "warning"
+        set_site_message(
+            f"Cloudinary migration complete: copied {copied}, skipped {skipped}, errors {errors}.",
+            level,
+        )
+    return redirect(url_for("admin_dashboard"))
+
+
 @app.route("/admin/flash-sale", methods=["GET", "POST"])
 @admin_required
 def admin_flash_sale():
@@ -5136,18 +5314,24 @@ def admin_edit_product(product_id):
                 file = request.files.get("image")
                 if file and file.filename:
                     if allowed_file(file.filename):
-                        os.makedirs(app.config["UPLOAD_FOLDER"], exist_ok=True)
-                        filename = secure_filename(file.filename)
-                        base, ext = os.path.splitext(filename)
-                        i = 1
-                        final_name = filename
-                        while os.path.exists(os.path.join(app.config["UPLOAD_FOLDER"], final_name)):
-                            final_name = f"{base}_{i}{ext}"
-                            i += 1
-                        save_path = os.path.join(app.config["UPLOAD_FOLDER"], final_name)
-                        file.save(save_path)
-                        compress_product_image(save_path)
-                        image_url = f"images/{final_name}"
+                        image_url = _cloudinary_upload(file, "bigoh/products") if USE_CLOUDINARY else None
+                        if not image_url:
+                            try:
+                                file.stream.seek(0)
+                            except Exception:
+                                pass
+                            os.makedirs(app.config["UPLOAD_FOLDER"], exist_ok=True)
+                            filename = secure_filename(file.filename)
+                            base, ext = os.path.splitext(filename)
+                            i = 1
+                            final_name = filename
+                            while os.path.exists(os.path.join(app.config["UPLOAD_FOLDER"], final_name)):
+                                final_name = f"{base}_{i}{ext}"
+                                i += 1
+                            save_path = os.path.join(app.config["UPLOAD_FOLDER"], final_name)
+                            file.save(save_path)
+                            compress_product_image(save_path)
+                            image_url = f"images/{final_name}"
 
                 if has_seller and products_has_seller(conn):
                     cur.execute(

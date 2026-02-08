@@ -403,10 +403,16 @@
         <form class="search" method="GET" action="/admin">
           <input type="text" name="q" value="{{ search }}" placeholder="Search by order, customer, or location...">
         </form>
-        <form method="POST" action="/admin/migrate-uploads" onsubmit="return confirm('Migrate local static images into the upload volume now?');">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <button class="btn btn-sm btn-outline-light" type="submit">Migrate Uploads</button>
-        </form>
+        <div class="d-flex gap-2 flex-wrap">
+          <form method="POST" action="/admin/migrate-uploads" onsubmit="return confirm('Migrate local static images into the upload volume now?');">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="btn btn-sm btn-outline-light" type="submit">Migrate Uploads</button>
+          </form>
+          <form method="POST" action="/admin/migrate-cloudinary" onsubmit="return confirm('Upload local images to Cloudinary and update the database?');">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="btn btn-sm btn-outline-light" type="submit">Migrate Cloudinary</button>
+          </form>
+        </div>
       </div>
 
       {% if error %}
