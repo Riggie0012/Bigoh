@@ -94,6 +94,7 @@ WHATSAPP_ALERT_WEBHOOK = os.getenv("WHATSAPP_ALERT_WEBHOOK", "").strip()
 WHATSAPP_ALERT_TOKEN = os.getenv("WHATSAPP_ALERT_TOKEN", "").strip()
 WHATSAPP_ALERT_TO = os.getenv("WHATSAPP_ALERT_TO", "").strip() or SUPPORT_WHATSAPP
 WHATSAPP_RECEIPTS_ENABLED = os.getenv("WHATSAPP_RECEIPTS_ENABLED", "0") == "1"
+WHATSAPP_STATUS_UPDATES_ENABLED = os.getenv("WHATSAPP_STATUS_UPDATES_ENABLED", "1") == "1"
 REVIEW_AUTO_APPROVE = os.getenv("REVIEW_AUTO_APPROVE", "0") == "1"
 REVIEW_TRUSTED_USERS = {
     u.strip().lower()
@@ -5473,15 +5474,66 @@ def admin_update_order_status(order_id):
             prev_status = _row_at(row, 0, "")
             user_id = _row_at(row, 1, None)
             cur.execute("UPDATE orders SET status=%s WHERE order_id=%s", (status, order_id))
-            if status == "DELIVERED" and prev_status != "DELIVERED" and user_id:
-                cur.execute("SELECT phone FROM users WHERE id=%s", (user_id,))
+            if user_id and prev_status != status and WHATSAPP_STATUS_UPDATES_ENABLED:
+                cur.execute("SELECT phone, username FROM users WHERE id=%s", (user_id,))
                 phone_row = cur.fetchone()
                 user_phone = _row_at(phone_row, 0, "")
+                user_name = _row_at(phone_row, 1, "") or "Customer"
                 receipt_link = url_for("order_receipt", order_id=order_id, _external=True)
-                message = (
-                    f"Your order #{order_id} has been delivered. "
-                    f"Receipt: {receipt_link}\n"
-                    f"- {BUSINESS_NAME}"
+                status_templates = {
+                    "PENDING": (
+                        "Hello {name},\n"
+                        "We have received your order #{order_id} and it is now pending confirmation.\n"
+                        "We will update you shortly.\n"
+                        "Need help? WhatsApp {support}\n"
+                        "- {business}"
+                    ),
+                    "PROCESSING": (
+                        "Hello {name},\n"
+                        "Your order #{order_id} is now being processed.\n"
+                        "We are preparing your items for dispatch.\n"
+                        "Need help? WhatsApp {support}\n"
+                        "- {business}"
+                    ),
+                    "COMPLETED": (
+                        "Hello {name},\n"
+                        "Your order #{order_id} has been completed.\n"
+                        "Invoice/Receipt: {receipt}\n"
+                        "For any queries, contact us on WhatsApp {support}.\n"
+                        "Regards,\n"
+                        "{business}"
+                    ),
+                    "DELIVERED": (
+                        "Hello {name},\n"
+                        "Your order #{order_id} has been delivered.\n"
+                        "Final Receipt: {receipt}\n"
+                        "Thank you for your business.\n"
+                        "Regards,\n"
+                        "{business}"
+                    ),
+                    "CANCELLED": (
+                        "Hello {name},\n"
+                        "Your order #{order_id} has been cancelled.\n"
+                        "If this is unexpected, please contact us.\n"
+                        "WhatsApp {support}\n"
+                        "- {business}"
+                    ),
+                }
+                template = status_templates.get(status, "")
+                if not template:
+                    template = (
+                        "Hello {name},\n"
+                        "Your order #{order_id} status has been updated to {status}.\n"
+                        "Need help? WhatsApp {support}\n"
+                        "- {business}"
+                    )
+                message = template.format(
+                    name=user_name,
+                    order_id=order_id,
+                    status=status.title(),
+                    receipt=receipt_link,
+                    support=SUPPORT_WHATSAPP,
+                    business=BUSINESS_NAME,
                 )
                 _send_whatsapp_message(user_phone, message)
         conn.commit()
@@ -5515,9 +5567,11 @@ def admin_send_receipt(order_id):
 
     receipt_link = url_for("order_receipt", order_id=order_id, _external=True)
     message = (
-        f"Your order #{order_id} has been confirmed. "
-        f"Receipt: {receipt_link}\n"
-        f"- {BUSINESS_NAME}"
+        f"Hello,\n"
+        f"Your order #{order_id} has been confirmed.\n"
+        f"Invoice/Receipt: {receipt_link}\n"
+        f"Regards,\n"
+        f"{BUSINESS_NAME}"
     )
     ok = _send_whatsapp_message(user_phone, message)
     if ok:

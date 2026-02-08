@@ -65,7 +65,7 @@
         {% endif %}
       </div>
       <div class="text-end">
-        <h5 class="mb-1">Receipt</h5>
+        <h5 class="mb-1">Official Receipt</h5>
         <div class="text-muted">Reference: {{ reference }}</div>
         <div class="text-muted">Order ID: #{{ order[0] }}</div>
       </div>
@@ -146,6 +146,9 @@
 
     <div class="mt-3 text-muted small">
       Support: {{ support_phone }}{% if support_whatsapp %} (WhatsApp {{ support_whatsapp }}){% endif %}{% if support_email %} | {{ support_email }}{% endif %}
+    </div>
+    <div class="text-muted small mt-1">
+      This is a system-generated receipt issued by {{ business_name }}.
     </div>
   </div>
 

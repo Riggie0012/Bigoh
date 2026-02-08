@@ -569,14 +569,13 @@
                     </button>
                   </td>
                   <td>
-                    <form method="POST" action="{{ url_for('admin_update_order_status', order_id=o[0]) }}" class="d-flex gap-2">
+                    <form method="POST" action="{{ url_for('admin_update_order_status', order_id=o[0]) }}" class="d-flex gap-2 js-status-form">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                      <select name="status" class="form-select form-select-sm bg-dark text-white border-0">
+                      <select name="status" class="form-select form-select-sm bg-dark text-white border-0 js-status-select">
                         {% for s in ["PENDING", "PROCESSING", "COMPLETED", "DELIVERED", "CANCELLED"] %}
                           <option value="{{ s }}" {% if o[6] == s %}selected{% endif %}>{{ s }}</option>
                         {% endfor %}
                       </select>
-                      <button class="btn btn-sm btn-primary" type="submit">Save</button>
                     </form>
                   </td>
                 {% else %}
@@ -594,14 +593,13 @@
                     </button>
                   </td>
                   <td>
-                    <form method="POST" action="{{ url_for('admin_update_order_status', order_id=o[0]) }}" class="d-flex gap-2">
+                    <form method="POST" action="{{ url_for('admin_update_order_status', order_id=o[0]) }}" class="d-flex gap-2 js-status-form">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                      <select name="status" class="form-select form-select-sm bg-dark text-white border-0">
+                      <select name="status" class="form-select form-select-sm bg-dark text-white border-0 js-status-select">
                         {% for s in ["PENDING", "PROCESSING", "COMPLETED", "DELIVERED", "CANCELLED"] %}
                           <option value="{{ s }}" {% if o[5] == s %}selected{% endif %}>{{ s }}</option>
                         {% endfor %}
                       </select>
-                      <button class="btn btn-sm btn-primary" type="submit">Save</button>
                     </form>
                   </td>
                 {% endif %}
@@ -732,6 +730,16 @@
         } catch (err) {
           const panel = row.querySelector(".drawer-panel");
           panel.innerHTML = '<div class="text-muted">Unable to load order items.</div>';
+        }
+      });
+    });
+
+    document.querySelectorAll(".js-status-select").forEach((select) => {
+      select.addEventListener("change", () => {
+        const form = select.closest("form");
+        if (form) {
+          select.disabled = true;
+          form.submit();
         }
       });
     });
