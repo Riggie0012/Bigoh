@@ -440,13 +440,14 @@ def _resolve_local_upload_path(path: str) -> Optional[str]:
     return None
 
 
-def _migrate_cloudinary_assets():
+def _migrate_cloudinary_assets(limit: int = 25):
     if not USE_CLOUDINARY:
         return {"error": "Cloudinary is not configured."}
 
     copied = 0
     skipped = 0
     errors = 0
+    processed = 0
 
     conn = get_db_connection()
     try:
@@ -458,18 +459,23 @@ def _migrate_cloudinary_assets():
                 rows = []
 
             for row in rows:
+                if processed >= limit:
+                    break
                 product_id = _row_at(row, 0)
                 image_url = _row_at(row, 1, "")
                 if not image_url or str(image_url).startswith(("http://", "https://")):
                     skipped += 1
+                    processed += 1
                     continue
                 local_path = _resolve_local_upload_path(image_url)
                 if not local_path:
                     errors += 1
+                    processed += 1
                     continue
                 new_url = _cloudinary_upload_path(local_path, "bigoh/products")
                 if not new_url:
                     errors += 1
+                    processed += 1
                     continue
                 try:
                     cur.execute(
@@ -479,26 +485,34 @@ def _migrate_cloudinary_assets():
                     copied += 1
                 except Exception:
                     errors += 1
+                processed += 1
 
-            try:
-                cur.execute("SELECT id, review_photo FROM product_reviews WHERE review_photo IS NOT NULL")
-                review_rows = cur.fetchall() or []
-            except Exception:
-                review_rows = []
+            review_rows = []
+            if processed < limit:
+                try:
+                    cur.execute("SELECT id, review_photo FROM product_reviews WHERE review_photo IS NOT NULL")
+                    review_rows = cur.fetchall() or []
+                except Exception:
+                    review_rows = []
 
             for row in review_rows:
+                if processed >= limit:
+                    break
                 review_id = _row_at(row, 0)
                 review_photo = _row_at(row, 1, "")
                 if not review_photo or str(review_photo).startswith(("http://", "https://")):
                     skipped += 1
+                    processed += 1
                     continue
                 local_path = _resolve_local_upload_path(review_photo)
                 if not local_path:
                     errors += 1
+                    processed += 1
                     continue
                 new_url = _cloudinary_upload_path(local_path, "bigoh/reviews")
                 if not new_url:
                     errors += 1
+                    processed += 1
                     continue
                 try:
                     cur.execute(
@@ -508,11 +522,18 @@ def _migrate_cloudinary_assets():
                     copied += 1
                 except Exception:
                     errors += 1
+                processed += 1
         conn.commit()
     finally:
         conn.close()
 
-    return {"copied": copied, "skipped": skipped, "errors": errors}
+    return {
+        "copied": copied,
+        "skipped": skipped,
+        "errors": errors,
+        "processed": processed,
+        "limit": limit,
+    }
 
 def slugify_category(name: str) -> str:
     slug = re.sub(r"[^a-z0-9]+", "-", (name or "").lower()).strip("-")
@@ -4983,16 +5004,23 @@ def admin_migrate_uploads():
 @app.route("/admin/migrate-cloudinary", methods=["POST"])
 @admin_required
 def admin_migrate_cloudinary():
-    result = _migrate_cloudinary_assets()
+    try:
+        limit = int(request.form.get("limit", "25") or 25)
+    except ValueError:
+        limit = 25
+    limit = max(1, min(200, limit))
+    result = _migrate_cloudinary_assets(limit=limit)
     if "error" in result:
         set_site_message(result["error"], "warning")
     else:
         copied = result.get("copied", 0)
         skipped = result.get("skipped", 0)
         errors = result.get("errors", 0)
+        processed = result.get("processed", 0)
+        limit_used = result.get("limit", limit)
         level = "success" if errors == 0 else "warning"
         set_site_message(
-            f"Cloudinary migration complete: copied {copied}, skipped {skipped}, errors {errors}.",
+            f"Cloudinary migration batch complete: processed {processed}/{limit_used}, copied {copied}, skipped {skipped}, errors {errors}. Run again to continue.",
             level,
         )
     return redirect(url_for("admin_dashboard"))

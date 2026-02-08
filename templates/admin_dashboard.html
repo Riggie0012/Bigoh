@@ -410,6 +410,7 @@
           </form>
           <form method="POST" action="/admin/migrate-cloudinary" onsubmit="return confirm('Upload local images to Cloudinary and update the database?');">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="limit" value="25">
             <button class="btn btn-sm btn-outline-light" type="submit">Migrate Cloudinary</button>
           </form>
         </div>
