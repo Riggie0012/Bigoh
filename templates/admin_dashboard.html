@@ -413,6 +413,16 @@
             <input type="hidden" name="limit" value="25">
             <button class="btn btn-sm btn-outline-light" type="submit">Migrate Cloudinary</button>
           </form>
+          <form method="POST" action="/admin/cloudinary-duplicates" onsubmit="return confirm('Scan Cloudinary for duplicate assets now?');">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="limit" value="200">
+            <button class="btn btn-sm btn-outline-light" type="submit">Scan Cloudinary</button>
+          </form>
+          <form method="POST" action="/admin/cloudinary-cleanup" onsubmit="return confirm('Delete scanned duplicate assets from Cloudinary?');">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="limit" value="200">
+            <button class="btn btn-sm btn-outline-danger" type="submit">Delete Duplicates</button>
+          </form>
         </div>
       </div>
 

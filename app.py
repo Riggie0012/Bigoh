@@ -29,6 +29,7 @@ except Exception:
 try:
     import cloudinary
     import cloudinary.uploader
+    import cloudinary.api
 except Exception:
     cloudinary = None
 
@@ -326,19 +327,28 @@ def _cloudinary_upload(file_storage, folder: str) -> Optional[str]:
         return None
 
 
-def _cloudinary_upload_path(path: str, folder: str) -> Optional[str]:
+def _cloudinary_upload_path(
+    path: str,
+    folder: str,
+    public_id: Optional[str] = None,
+    overwrite: bool = False,
+) -> Optional[str]:
     if not USE_CLOUDINARY or not cloudinary:
         return None
     if not path or not os.path.isfile(path):
         return None
     try:
-        result = cloudinary.uploader.upload(
-            path,
-            folder=folder,
-            resource_type="image",
-            overwrite=False,
-            unique_filename=True,
-        )
+        options = {
+            "folder": folder,
+            "resource_type": "image",
+            "overwrite": overwrite,
+        }
+        if public_id:
+            options["public_id"] = public_id
+            options["unique_filename"] = False
+        else:
+            options["unique_filename"] = True
+        result = cloudinary.uploader.upload(path, **options)
         return result.get("secure_url") or result.get("url")
     except Exception:
         return None
@@ -472,7 +482,12 @@ def _migrate_cloudinary_assets(limit: int = 25):
                     errors += 1
                     processed += 1
                     continue
-                new_url = _cloudinary_upload_path(local_path, "bigoh/products")
+                new_url = _cloudinary_upload_path(
+                    local_path,
+                    "bigoh/products",
+                    public_id=str(product_id),
+                    overwrite=True,
+                )
                 if not new_url:
                     errors += 1
                     processed += 1
@@ -509,7 +524,12 @@ def _migrate_cloudinary_assets(limit: int = 25):
                     errors += 1
                     processed += 1
                     continue
-                new_url = _cloudinary_upload_path(local_path, "bigoh/reviews")
+                new_url = _cloudinary_upload_path(
+                    local_path,
+                    "bigoh/reviews",
+                    public_id=str(review_id),
+                    overwrite=True,
+                )
                 if not new_url:
                     errors += 1
                     processed += 1
@@ -534,6 +554,72 @@ def _migrate_cloudinary_assets(limit: int = 25):
         "processed": processed,
         "limit": limit,
     }
+
+
+def _cloudinary_list_folder(folder: str, max_results: int = 200):
+    if not USE_CLOUDINARY or not cloudinary:
+        return {"error": "Cloudinary is not configured."}
+    resources = []
+    next_cursor = None
+    try:
+        while True:
+            params = {
+                "type": "upload",
+                "resource_type": "image",
+                "prefix": f"{folder}/",
+                "max_results": min(max_results, 500),
+            }
+            if next_cursor:
+                params["next_cursor"] = next_cursor
+            result = cloudinary.api.resources(**params)
+            batch = result.get("resources", []) or []
+            resources.extend(batch)
+            next_cursor = result.get("next_cursor")
+            if not next_cursor or len(resources) >= max_results:
+                break
+        return {"resources": resources[:max_results]}
+    except Exception as exc:
+        return {"error": str(exc)}
+
+
+def _cloudinary_find_duplicates(max_results: int = 200):
+    # Duplicates are assets not following numeric public_id convention
+    duplicates = []
+    scanned = 0
+    for folder in ("bigoh/products", "bigoh/reviews"):
+        resp = _cloudinary_list_folder(folder, max_results=max_results)
+        if "error" in resp:
+            return {"error": resp["error"]}
+        for res in resp.get("resources", []):
+            public_id = res.get("public_id", "")
+            scanned += 1
+            leaf = public_id.split("/")[-1]
+            if not leaf.isdigit():
+                duplicates.append(public_id)
+            if len(duplicates) >= max_results:
+                break
+        if len(duplicates) >= max_results:
+            break
+    return {"duplicates": duplicates, "scanned": scanned, "limit": max_results}
+
+
+def _cloudinary_delete_public_ids(public_ids, batch_size: int = 100):
+    if not USE_CLOUDINARY or not cloudinary:
+        return {"error": "Cloudinary is not configured."}
+    deleted = 0
+    errors = 0
+    for i in range(0, len(public_ids), batch_size):
+        chunk = public_ids[i : i + batch_size]
+        try:
+            result = cloudinary.api.delete_resources(
+                chunk,
+                resource_type="image",
+                type="upload",
+            )
+            deleted += sum(1 for _, status in (result.get("deleted") or {}).items() if status == "deleted")
+        except Exception:
+            errors += len(chunk)
+    return {"deleted": deleted, "errors": errors}
 
 def slugify_category(name: str) -> str:
     slug = re.sub(r"[^a-z0-9]+", "-", (name or "").lower()).strip("-")
@@ -5021,6 +5107,57 @@ def admin_migrate_cloudinary():
         level = "success" if errors == 0 else "warning"
         set_site_message(
             f"Cloudinary migration batch complete: processed {processed}/{limit_used}, copied {copied}, skipped {skipped}, errors {errors}. Run again to continue.",
+            level,
+        )
+    return redirect(url_for("admin_dashboard"))
+
+
+@app.route("/admin/cloudinary-duplicates", methods=["POST"])
+@admin_required
+def admin_cloudinary_duplicates():
+    try:
+        limit = int(request.form.get("limit", "200") or 200)
+    except ValueError:
+        limit = 200
+    limit = max(1, min(500, limit))
+    result = _cloudinary_find_duplicates(max_results=limit)
+    if "error" in result:
+        set_site_message(result["error"], "warning")
+    else:
+        dupes = result.get("duplicates", [])
+        scanned = result.get("scanned", 0)
+        set_site_message(
+            f"Cloudinary scan complete: scanned {scanned}, duplicates found {len(dupes)} (limit {limit}).",
+            "info",
+        )
+        session["cloudinary_duplicates"] = dupes
+    return redirect(url_for("admin_dashboard"))
+
+
+@app.route("/admin/cloudinary-cleanup", methods=["POST"])
+@admin_required
+def admin_cloudinary_cleanup():
+    dupes = session.get("cloudinary_duplicates", []) or []
+    if not dupes:
+        set_site_message("No cached duplicates to delete. Run scan first.", "warning")
+        return redirect(url_for("admin_dashboard"))
+    try:
+        max_delete = int(request.form.get("limit", "200") or 200)
+    except ValueError:
+        max_delete = 200
+    max_delete = max(1, min(500, max_delete))
+    target = dupes[:max_delete]
+    result = _cloudinary_delete_public_ids(target)
+    if "error" in result:
+        set_site_message(result["error"], "warning")
+    else:
+        deleted = result.get("deleted", 0)
+        errors = result.get("errors", 0)
+        remaining = dupes[max_delete:]
+        session["cloudinary_duplicates"] = remaining
+        level = "success" if errors == 0 else "warning"
+        set_site_message(
+            f"Cloudinary cleanup: deleted {deleted}, errors {errors}. Remaining cached: {len(remaining)}.",
             level,
         )
     return redirect(url_for("admin_dashboard"))
