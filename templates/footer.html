@@ -128,6 +128,18 @@
   .zen-footer__link:hover {
     color: #ff7a00;
   }
+  .zen-footer__small {
+    font-size: 12px;
+    color: #94a3b8;
+    margin: 2px 0 8px;
+  }
+  .zen-footer__small a {
+    color: #cbd5f5;
+    text-decoration: none;
+  }
+  .zen-footer__small a:hover {
+    color: #ffb26b;
+  }
 
   .zen-footer__icon {
     width: 16px;
@@ -216,7 +228,17 @@
       <div class="zen-footer__card">
         <div class="zen-footer__title">Support</div>
         <a class="zen-footer__link" href="mailto:{{ support_email }}"><i class="fa-regular fa-envelope"></i> IT Support</a>
+        <div class="zen-footer__small">
+          <a href="https://mail.google.com/mail/?view=cm&fs=1&to={{ support_email }}" target="_blank">Gmail</a> ·
+          <a href="https://outlook.office.com/mail/deeplink/compose?to={{ support_email }}" target="_blank">Outlook</a> ·
+          <a href="https://compose.mail.yahoo.com/?to={{ support_email }}" target="_blank">Yahoo</a>
+        </div>
         <a class="zen-footer__link" href="mailto:{{ support_email_admin }}"><i class="fa-regular fa-envelope"></i> Admin Support</a>
+        <div class="zen-footer__small">
+          <a href="https://mail.google.com/mail/?view=cm&fs=1&to={{ support_email_admin }}" target="_blank">Gmail</a> ·
+          <a href="https://outlook.office.com/mail/deeplink/compose?to={{ support_email_admin }}" target="_blank">Outlook</a> ·
+          <a href="https://compose.mail.yahoo.com/?to={{ support_email_admin }}" target="_blank">Yahoo</a>
+        </div>
         <a class="zen-footer__link" href="https://wa.me/{{ support_whatsapp }}" target="_blank"><i class="fa-brands fa-whatsapp"></i> WhatsApp Chat</a>
         <a class="zen-footer__link" href="tel:{{ support_phone|replace(' ', '') }}"><i class="fa-solid fa-phone"></i> Call / SMS: {{ support_phone }}</a>
         <div class="zen-footer__pill">Support hours: {{ support_hours }}</div>
