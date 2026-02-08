@@ -51,21 +51,6 @@ ADMIN_USERS = {
 
 from werkzeug.middleware.proxy_fix import ProxyFix
 
-app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
-
-if USE_CLOUDINARY:
-    if os.getenv("CLOUDINARY_URL"):
-        cloudinary.config(secure=True)
-    else:
-        cloudinary.config(
-            cloud_name=os.getenv("CLOUDINARY_CLOUD_NAME"),
-            api_key=os.getenv("CLOUDINARY_API_KEY"),
-            api_secret=os.getenv("CLOUDINARY_API_SECRET"),
-            secure=True,
-        )
-
-
-
 BUSINESS_NAME = os.getenv("BUSINESS_NAME", "Bigoh")
 BUSINESS_ADDRESS = os.getenv("BUSINESS_ADDRESS", "Donholm Caltex, Nairobi")
 BUSINESS_REG_NO = os.getenv("BUSINESS_REG_NO", "")
@@ -125,6 +110,19 @@ BRAND_PARTNERS = [
     for p in os.getenv("BRAND_PARTNERS", "").split(",")
     if p.strip()
 ]
+
+app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
+
+if USE_CLOUDINARY:
+    if os.getenv("CLOUDINARY_URL"):
+        cloudinary.config(secure=True)
+    else:
+        cloudinary.config(
+            cloud_name=os.getenv("CLOUDINARY_CLOUD_NAME"),
+            api_key=os.getenv("CLOUDINARY_API_KEY"),
+            api_secret=os.getenv("CLOUDINARY_API_SECRET"),
+            secure=True,
+        )
 
 LOG_DIR = os.getenv("LOG_DIR", "logs")
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
