@@ -96,6 +96,9 @@ WHATSAPP_ALERT_TO = os.getenv("WHATSAPP_ALERT_TO", "").strip() or SUPPORT_WHATSA
 WHATSAPP_RECEIPTS_ENABLED = os.getenv("WHATSAPP_RECEIPTS_ENABLED", "0") == "1"
 WHATSAPP_STATUS_UPDATES_ENABLED = os.getenv("WHATSAPP_STATUS_UPDATES_ENABLED", "1") == "1"
 CRON_SECRET = os.getenv("CRON_SECRET", "").strip()
+ABANDONED_CART_HOURS = int(os.getenv("ABANDONED_CART_HOURS", "4"))
+REVIEW_REQUEST_DELAY_HOURS = int(os.getenv("REVIEW_REQUEST_DELAY_HOURS", "24"))
+STALE_PENDING_HOURS = int(os.getenv("STALE_PENDING_HOURS", "48"))
 REVIEW_AUTO_APPROVE = os.getenv("REVIEW_AUTO_APPROVE", "0") == "1"
 REVIEW_TRUSTED_USERS = {
     u.strip().lower()
@@ -831,6 +834,65 @@ def _cron_authorized() -> bool:
     return bool(token and hmac.compare_digest(str(token), str(CRON_SECRET)))
 
 
+def _build_status_message(status: str, order_id: int, user_name: str, receipt_link: str) -> str:
+    status = (status or "").upper()
+    templates = {
+        "PENDING": (
+            "Hello {name},\n"
+            "We have received your order #{order_id} and it is now pending confirmation.\n"
+            "We will update you shortly.\n"
+            "Need help? WhatsApp {support}\n"
+            "- {business}"
+        ),
+        "PROCESSING": (
+            "Hello {name},\n"
+            "Your order #{order_id} is now being processed.\n"
+            "We are preparing your items for dispatch.\n"
+            "Need help? WhatsApp {support}\n"
+            "- {business}"
+        ),
+        "COMPLETED": (
+            "Hello {name},\n"
+            "Your order #{order_id} has been completed.\n"
+            "Invoice/Receipt: {receipt}\n"
+            "For any queries, contact us on WhatsApp {support}.\n"
+            "Regards,\n"
+            "{business}"
+        ),
+        "DELIVERED": (
+            "Hello {name},\n"
+            "Your order #{order_id} has been delivered.\n"
+            "Final Receipt: {receipt}\n"
+            "Thank you for your business.\n"
+            "Regards,\n"
+            "{business}"
+        ),
+        "CANCELLED": (
+            "Hello {name},\n"
+            "Your order #{order_id} has been cancelled.\n"
+            "If this is unexpected, please contact us.\n"
+            "WhatsApp {support}\n"
+            "- {business}"
+        ),
+    }
+    template = templates.get(status)
+    if not template:
+        template = (
+            "Hello {name},\n"
+            "Your order #{order_id} status has been updated to {status}.\n"
+            "Need help? WhatsApp {support}\n"
+            "- {business}"
+        )
+    return template.format(
+        name=user_name,
+        order_id=order_id,
+        status=status.title(),
+        receipt=receipt_link,
+        support=SUPPORT_WHATSAPP,
+        business=BUSINESS_NAME,
+    )
+
+
 @app.before_request
 def csrf_protect():
     if request.method in ("POST", "PUT", "PATCH", "DELETE"):
@@ -972,6 +1034,148 @@ def task_back_in_stock():
     finally:
         conn.close()
     return jsonify(ok=True, processed=processed)
+
+
+@app.route("/tasks/abandoned-carts", methods=["GET", "POST"])
+def task_abandoned_carts():
+    if not _cron_authorized():
+        return "Unauthorized", 401
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cur:
+            if not ensure_abandoned_carts_table(cur):
+                return jsonify(ok=False, error="table"), 500
+            conn.commit()
+            cur.execute(
+                """
+                SELECT a.user_id, a.cart_json, u.phone, u.username
+                FROM abandoned_carts a
+                JOIN users u ON u.id = a.user_id
+                WHERE a.notified_at IS NULL
+                  AND a.updated_at <= (NOW() - INTERVAL %s HOUR)
+                LIMIT 200
+                """,
+                (ABANDONED_CART_HOURS,),
+            )
+            rows = cur.fetchall() or []
+            sent = 0
+            for row in rows:
+                user_id = _row_at(row, 0)
+                cart_json = _row_at(row, 1, "")
+                phone = _row_at(row, 2, "")
+                name = _row_at(row, 3, "") or "Customer"
+                if not cart_json or cart_json == "{}":
+                    continue
+                cart_link = url_for("cart", _external=True)
+                message = (
+                    f"Hello {name},\n"
+                    f"You have items waiting in your cart.\n"
+                    f"Complete your order here: {cart_link}\n"
+                    f"Need help? WhatsApp {SUPPORT_WHATSAPP}\n"
+                    f"- {BUSINESS_NAME}"
+                )
+                if _send_whatsapp_message(phone, message):
+                    cur.execute(
+                        "UPDATE abandoned_carts SET notified_at = NOW() WHERE user_id = %s",
+                        (user_id,),
+                    )
+                    sent += 1
+            conn.commit()
+    finally:
+        conn.close()
+    return jsonify(ok=True, sent=sent)
+
+
+@app.route("/tasks/review-requests", methods=["GET", "POST"])
+def task_review_requests():
+    if not _cron_authorized():
+        return "Unauthorized", 401
+    conn = get_db_connection()
+    try:
+        ensure_orders_delivery_columns(conn)
+        with conn.cursor() as cur:
+            if not ensure_order_review_requests_table(cur):
+                return jsonify(ok=False, error="table"), 500
+            conn.commit()
+            cur.execute(
+                """
+                SELECT o.order_id, o.user_id, u.phone, u.username, o.delivered_at
+                FROM orders o
+                JOIN users u ON u.id = o.user_id
+                LEFT JOIN order_review_requests r ON r.order_id = o.order_id
+                WHERE o.status = 'DELIVERED'
+                  AND o.delivered_at IS NOT NULL
+                  AND o.delivered_at <= (NOW() - INTERVAL %s HOUR)
+                  AND r.order_id IS NULL
+                LIMIT 200
+                """,
+                (REVIEW_REQUEST_DELAY_HOURS,),
+            )
+            rows = cur.fetchall() or []
+            sent = 0
+            for row in rows:
+                order_id = _row_at(row, 0)
+                phone = _row_at(row, 2, "")
+                name = _row_at(row, 3, "") or "Customer"
+                receipt_link = url_for("order_receipt", order_id=order_id, _external=True)
+                message = (
+                    f"Hello {name},\n"
+                    f"Thank you for shopping with {BUSINESS_NAME}.\n"
+                    f"Please leave a review for your order #{order_id}.\n"
+                    f"Receipt: {receipt_link}\n"
+                    f"We appreciate your feedback.\n"
+                    f"- {BUSINESS_NAME}"
+                )
+                if _send_whatsapp_message(phone, message):
+                    cur.execute(
+                        "INSERT INTO order_review_requests (order_id, notified_at) VALUES (%s, NOW())",
+                        (order_id,),
+                    )
+                    sent += 1
+            conn.commit()
+    finally:
+        conn.close()
+    return jsonify(ok=True, sent=sent)
+
+
+@app.route("/tasks/stale-pending", methods=["GET", "POST"])
+def task_stale_pending():
+    if not _cron_authorized():
+        return "Unauthorized", 401
+    conn = get_db_connection()
+    try:
+        ensure_orders_delivery_columns(conn)
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT o.order_id, o.user_id, u.phone, u.username
+                FROM orders o
+                JOIN users u ON u.id = o.user_id
+                WHERE o.status IN ('PENDING', 'PROCESSING')
+                  AND o.created_at <= (NOW() - INTERVAL %s HOUR)
+                LIMIT 200
+                """,
+                (STALE_PENDING_HOURS,),
+            )
+            rows = cur.fetchall() or []
+            updated = 0
+            for row in rows:
+                order_id = _row_at(row, 0)
+                phone = _row_at(row, 2, "")
+                name = _row_at(row, 3, "") or "Customer"
+                receipt_link = url_for("order_receipt", order_id=order_id, _external=True)
+                message = _build_status_message("CANCELLED", order_id, name, receipt_link)
+                cur.execute(
+                    "UPDATE orders SET status='CANCELLED', status_updated_at=NOW() WHERE order_id=%s",
+                    (order_id,),
+                )
+                if WHATSAPP_STATUS_UPDATES_ENABLED:
+                    _send_whatsapp_message(phone, message)
+                updated += 1
+            conn.commit()
+    finally:
+        conn.close()
+    return jsonify(ok=True, updated=updated)
 
 def _parse_db_url(db_url: str) -> dict:
     parsed = urlparse(db_url)
@@ -1964,6 +2168,53 @@ def ensure_back_in_stock_alerts_table(cur):
             )
             """
         )
+        return True
+    except Exception:
+        return False
+
+
+def ensure_abandoned_carts_table(cur):
+    try:
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS abandoned_carts (
+                user_id INT PRIMARY KEY,
+                cart_json TEXT NOT NULL,
+                updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                notified_at DATETIME NULL,
+                INDEX (updated_at)
+            )
+            """
+        )
+        return True
+    except Exception:
+        return False
+
+
+def ensure_order_review_requests_table(cur):
+    try:
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS order_review_requests (
+                order_id INT PRIMARY KEY,
+                notified_at DATETIME NULL,
+                created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
+        return True
+    except Exception:
+        return False
+
+
+def ensure_orders_delivery_columns(conn):
+    try:
+        with conn.cursor() as cur:
+            if not table_has_column(conn, "orders", "delivered_at"):
+                cur.execute("ALTER TABLE orders ADD COLUMN delivered_at DATETIME NULL")
+            if not table_has_column(conn, "orders", "status_updated_at"):
+                cur.execute("ALTER TABLE orders ADD COLUMN status_updated_at DATETIME NULL")
+        conn.commit()
         return True
     except Exception:
         return False
@@ -4339,6 +4590,26 @@ def add_to_cart(product_id):
 
     session["cart"] = cart
     total_items = sum(cart.values())
+    user_id = session.get("username")
+    if user_id:
+        try:
+            conn = get_db_connection()
+            with conn.cursor() as cur:
+                if ensure_abandoned_carts_table(cur):
+                    cur.execute(
+                        """
+                        INSERT INTO abandoned_carts (user_id, cart_json, notified_at)
+                        VALUES (%s, %s, NULL)
+                        ON DUPLICATE KEY UPDATE cart_json=VALUES(cart_json), notified_at=NULL
+                        """,
+                        (user_id, json.dumps(cart)),
+                    )
+                    conn.commit()
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
     if wants_json:
         return jsonify(
             {
@@ -4447,6 +4718,26 @@ def update_cart(product_id):
         cart[pid] = new_qty
 
     session["cart"] = cart
+    user_id = session.get("username")
+    if user_id:
+        try:
+            conn = get_db_connection()
+            with conn.cursor() as cur:
+                if ensure_abandoned_carts_table(cur):
+                    cur.execute(
+                        """
+                        INSERT INTO abandoned_carts (user_id, cart_json, notified_at)
+                        VALUES (%s, %s, NULL)
+                        ON DUPLICATE KEY UPDATE cart_json=VALUES(cart_json), notified_at=NULL
+                        """,
+                        (user_id, json.dumps(cart)),
+                    )
+                    conn.commit()
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
     return redirect(url_for("cart"))
 
 
@@ -4456,12 +4747,48 @@ def remove_from_cart(product_id):
     cart = session.get("cart", {})
     cart.pop(str(product_id), None)
     session["cart"] = cart
+    user_id = session.get("username")
+    if user_id:
+        try:
+            conn = get_db_connection()
+            with conn.cursor() as cur:
+                if ensure_abandoned_carts_table(cur):
+                    cur.execute(
+                        """
+                        INSERT INTO abandoned_carts (user_id, cart_json, notified_at)
+                        VALUES (%s, %s, NULL)
+                        ON DUPLICATE KEY UPDATE cart_json=VALUES(cart_json), notified_at=NULL
+                        """,
+                        (user_id, json.dumps(cart)),
+                    )
+                    conn.commit()
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
     return redirect(url_for("cart"))
 
 
 @app.route("/clear_cart")
 def clear_cart():
     session.pop("cart", None)
+    user_id = session.get("username")
+    if user_id:
+        try:
+            conn = get_db_connection()
+            with conn.cursor() as cur:
+                if ensure_abandoned_carts_table(cur):
+                    cur.execute(
+                        "UPDATE abandoned_carts SET cart_json=%s, notified_at=NULL WHERE user_id=%s",
+                        (json.dumps({}), user_id),
+                    )
+                    conn.commit()
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
     return redirect(url_for("cart"))
 
 @app.route("/checkout")
@@ -5541,73 +5868,28 @@ def admin_update_order_status(order_id):
     conn = get_db_connection()
     try:
         with conn.cursor() as cur:
+            ensure_orders_delivery_columns(conn)
             cur.execute("SELECT status, user_id FROM orders WHERE order_id=%s", (order_id,))
             row = cur.fetchone()
             prev_status = _row_at(row, 0, "")
             user_id = _row_at(row, 1, None)
-            cur.execute("UPDATE orders SET status=%s WHERE order_id=%s", (status, order_id))
+            cur.execute(
+                "UPDATE orders SET status=%s, status_updated_at=NOW() WHERE order_id=%s",
+                (status, order_id),
+            )
             if user_id and prev_status != status and WHATSAPP_STATUS_UPDATES_ENABLED:
                 cur.execute("SELECT phone, username FROM users WHERE id=%s", (user_id,))
                 phone_row = cur.fetchone()
                 user_phone = _row_at(phone_row, 0, "")
                 user_name = _row_at(phone_row, 1, "") or "Customer"
                 receipt_link = url_for("order_receipt", order_id=order_id, _external=True)
-                status_templates = {
-                    "PENDING": (
-                        "Hello {name},\n"
-                        "We have received your order #{order_id} and it is now pending confirmation.\n"
-                        "We will update you shortly.\n"
-                        "Need help? WhatsApp {support}\n"
-                        "- {business}"
-                    ),
-                    "PROCESSING": (
-                        "Hello {name},\n"
-                        "Your order #{order_id} is now being processed.\n"
-                        "We are preparing your items for dispatch.\n"
-                        "Need help? WhatsApp {support}\n"
-                        "- {business}"
-                    ),
-                    "COMPLETED": (
-                        "Hello {name},\n"
-                        "Your order #{order_id} has been completed.\n"
-                        "Invoice/Receipt: {receipt}\n"
-                        "For any queries, contact us on WhatsApp {support}.\n"
-                        "Regards,\n"
-                        "{business}"
-                    ),
-                    "DELIVERED": (
-                        "Hello {name},\n"
-                        "Your order #{order_id} has been delivered.\n"
-                        "Final Receipt: {receipt}\n"
-                        "Thank you for your business.\n"
-                        "Regards,\n"
-                        "{business}"
-                    ),
-                    "CANCELLED": (
-                        "Hello {name},\n"
-                        "Your order #{order_id} has been cancelled.\n"
-                        "If this is unexpected, please contact us.\n"
-                        "WhatsApp {support}\n"
-                        "- {business}"
-                    ),
-                }
-                template = status_templates.get(status, "")
-                if not template:
-                    template = (
-                        "Hello {name},\n"
-                        "Your order #{order_id} status has been updated to {status}.\n"
-                        "Need help? WhatsApp {support}\n"
-                        "- {business}"
-                    )
-                message = template.format(
-                    name=user_name,
-                    order_id=order_id,
-                    status=status.title(),
-                    receipt=receipt_link,
-                    support=SUPPORT_WHATSAPP,
-                    business=BUSINESS_NAME,
-                )
+                message = _build_status_message(status, order_id, user_name, receipt_link)
                 _send_whatsapp_message(user_phone, message)
+            if status == "DELIVERED" and prev_status != "DELIVERED":
+                cur.execute(
+                    "UPDATE orders SET delivered_at=NOW() WHERE order_id=%s",
+                    (order_id,),
+                )
         conn.commit()
     finally:
         conn.close()

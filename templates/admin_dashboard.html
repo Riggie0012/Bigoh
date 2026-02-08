@@ -738,7 +738,6 @@
       select.addEventListener("change", () => {
         const form = select.closest("form");
         if (form) {
-          select.disabled = true;
           form.submit();
         }
       });
