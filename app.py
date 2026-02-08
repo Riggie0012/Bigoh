@@ -99,6 +99,7 @@ CRON_SECRET = os.getenv("CRON_SECRET", "").strip()
 ABANDONED_CART_HOURS = int(os.getenv("ABANDONED_CART_HOURS", "4"))
 REVIEW_REQUEST_DELAY_HOURS = int(os.getenv("REVIEW_REQUEST_DELAY_HOURS", "24"))
 STALE_PENDING_HOURS = int(os.getenv("STALE_PENDING_HOURS", "48"))
+DAILY_SUMMARY_HOUR = int(os.getenv("DAILY_SUMMARY_HOUR", "18"))
 REVIEW_AUTO_APPROVE = os.getenv("REVIEW_AUTO_APPROVE", "0") == "1"
 REVIEW_TRUSTED_USERS = {
     u.strip().lower()
@@ -741,6 +742,7 @@ def get_category_overview(conn=None, limit=None):
             return []
         owns_conn = True
     try:
+        ensure_products_visibility_column(conn)
         with conn.cursor() as cur:
             base_sql = """
                 SELECT c.category, c.total, p.image_url
@@ -748,6 +750,7 @@ def get_category_overview(conn=None, limit=None):
                     SELECT category, COUNT(*) AS total, MAX(product_id) AS latest_id
                     FROM products
                     WHERE category IS NOT NULL AND category <> ''
+                      AND (is_hidden IS NULL OR is_hidden = 0)
                     GROUP BY category
                 ) c
                 LEFT JOIN products p ON p.product_id = c.latest_id
@@ -1176,6 +1179,93 @@ def task_stale_pending():
     finally:
         conn.close()
     return jsonify(ok=True, updated=updated)
+
+
+@app.route("/tasks/auto-hide", methods=["GET", "POST"])
+def task_auto_hide():
+    if not _cron_authorized():
+        return "Unauthorized", 401
+    conn = get_db_connection()
+    try:
+        ensure_products_visibility_column(conn)
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE products SET is_hidden=1 WHERE stock <= 0 AND (is_hidden IS NULL OR is_hidden = 0)"
+            )
+            hidden = cur.rowcount
+            cur.execute(
+                "UPDATE products SET is_hidden=0 WHERE stock > 0 AND is_hidden = 1"
+            )
+            unhidden = cur.rowcount
+        conn.commit()
+    finally:
+        conn.close()
+    return jsonify(ok=True, hidden=hidden, unhidden=unhidden)
+
+
+@app.route("/tasks/daily-summary", methods=["GET", "POST"])
+def task_daily_summary():
+    if not _cron_authorized():
+        return "Unauthorized", 401
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT COUNT(*), COALESCE(SUM(subtotal), 0)
+                FROM orders
+                WHERE DATE(created_at) = CURDATE()
+                """
+            )
+            row = cur.fetchone()
+            orders_count = int(_row_at(row, 0, 0) or 0)
+            revenue = float(_row_at(row, 1, 0) or 0)
+
+            cur.execute(
+                "SELECT COUNT(*) FROM orders WHERE DATE(created_at)=CURDATE() AND status='DELIVERED'"
+            )
+            delivered = int(_row_at(cur.fetchone(), 0, 0) or 0)
+            cur.execute(
+                "SELECT COUNT(*) FROM orders WHERE DATE(created_at)=CURDATE() AND status='COMPLETED'"
+            )
+            completed = int(_row_at(cur.fetchone(), 0, 0) or 0)
+            cur.execute(
+                "SELECT COUNT(*) FROM orders WHERE DATE(created_at)=CURDATE() AND status='CANCELLED'"
+            )
+            cancelled = int(_row_at(cur.fetchone(), 0, 0) or 0)
+
+            cur.execute(
+                """
+                SELECT oi.product_name, SUM(oi.quantity) AS qty
+                FROM order_items oi
+                JOIN orders o ON o.order_id = oi.order_id
+                WHERE DATE(o.created_at) = CURDATE()
+                GROUP BY oi.product_name
+                ORDER BY qty DESC
+                LIMIT 3
+                """
+            )
+            top = cur.fetchall() or []
+
+            cur.execute(
+                "SELECT COUNT(*) FROM products WHERE stock <= %s",
+                (LOW_STOCK_THRESHOLD,),
+            )
+            low_stock = int(_row_at(cur.fetchone(), 0, 0) or 0)
+    finally:
+        conn.close()
+
+    top_lines = "\n".join([f"- {row[0]} ({int(row[1])})" for row in top]) or "No sales yet."
+    message = (
+        f"{BUSINESS_NAME} Daily Summary (today)\n"
+        f"Orders: {orders_count}\n"
+        f"Revenue: KES {revenue:,.2f}\n"
+        f"Completed: {completed} | Delivered: {delivered} | Cancelled: {cancelled}\n"
+        f"Low stock items: {low_stock}\n"
+        f"Top products:\n{top_lines}"
+    )
+    _send_whatsapp_alert(message)
+    return jsonify(ok=True, orders=orders_count, revenue=revenue)
 
 def _parse_db_url(db_url: str) -> dict:
     parsed = urlparse(db_url)
@@ -2220,6 +2310,17 @@ def ensure_orders_delivery_columns(conn):
         return False
 
 
+def ensure_products_visibility_column(conn):
+    try:
+        with conn.cursor() as cur:
+            if not table_has_column(conn, "products", "is_hidden"):
+                cur.execute("ALTER TABLE products ADD COLUMN is_hidden TINYINT(1) NOT NULL DEFAULT 0")
+        conn.commit()
+        return True
+    except Exception:
+        return False
+
+
 def ensure_active_sessions_table(cur):
     try:
         cur.execute(
@@ -2436,6 +2537,7 @@ def process_back_in_stock_alerts(conn, limit: int = 200):
 def get_sponsored_products(conn, limit: int = 8):
     products = []
     try:
+        ensure_products_visibility_column(conn)
         with conn.cursor() as cur:
             if not ensure_sponsored_products_table(cur):
                 return products
@@ -2445,7 +2547,7 @@ def get_sponsored_products(conn, limit: int = 8):
                 SELECT p.*
                 FROM sponsored_products s
                 JOIN products p ON p.product_id = s.product_id
-                WHERE s.is_active = 1
+                WHERE s.is_active = 1 AND (p.is_hidden IS NULL OR p.is_hidden = 0)
                 ORDER BY s.id DESC
                 LIMIT %s
                 """,
@@ -2477,6 +2579,7 @@ def get_flash_sale_state(conn):
         "items": [],
     }
     try:
+        ensure_products_visibility_column(conn)
         with conn.cursor() as cur:
             if not ensure_flash_sale_tables(cur):
                 return state
@@ -2519,7 +2622,7 @@ def get_flash_sale_state(conn):
                     SELECT p.*
                     FROM flash_sale_items f
                     JOIN products p ON f.product_id = p.product_id
-                    WHERE f.is_active = 1
+                    WHERE f.is_active = 1 AND (p.is_hidden IS NULL OR p.is_hidden = 0)
                     ORDER BY p.product_id DESC
                     """
                 )
@@ -2610,6 +2713,7 @@ def home():
     category_limit = int(os.getenv("HOME_CATEGORY_LIMIT", "6") or 6)
     items_limit = int(os.getenv("HOME_CATEGORY_ITEMS", "12") or 12)
     new_limit = int(os.getenv("NEW_PRODUCTS_LIMIT", "10") or 10)
+    ensure_products_visibility_column(connection)
     cursor = connection.cursor()
     category_rows = get_category_overview(connection, limit=category_limit)
     categories = []
@@ -2620,7 +2724,7 @@ def home():
         cursor.execute(
             """
             SELECT * FROM products
-            WHERE category = %s
+            WHERE category = %s AND (is_hidden IS NULL OR is_hidden = 0)
             ORDER BY product_id DESC
             LIMIT %s
             """,
@@ -2638,9 +2742,9 @@ def home():
         )
 
     if table_has_column(connection, "products", "created_at"):
-        sql5 = "SELECT * FROM products ORDER BY created_at DESC, product_id DESC LIMIT %s"
+        sql5 = "SELECT * FROM products WHERE (is_hidden IS NULL OR is_hidden = 0) ORDER BY created_at DESC, product_id DESC LIMIT %s"
     else:
-        sql5 = "SELECT * FROM products ORDER BY product_id DESC LIMIT %s"
+        sql5 = "SELECT * FROM products WHERE (is_hidden IS NULL OR is_hidden = 0) ORDER BY product_id DESC LIMIT %s"
     cursor = connection.cursor()
     cursor.execute(sql5, (new_limit,))
     new_products = cursor.fetchall()
@@ -4095,6 +4199,8 @@ def advanced_product_search(raw_query):
         add_soundex_score("p.brand", raw_lower, 3)
         add_soundex_score("p.category", raw_lower, 2)
 
+    where_parts.append("(p.is_hidden IS NULL OR p.is_hidden = 0)")
+
     if min_price is not None and max_price is not None:
         where_parts.append("p.price BETWEEN %s AND %s")
         where_params.extend([min_price, max_price])
@@ -4135,6 +4241,7 @@ def advanced_product_search(raw_query):
 
     connection = get_db_connection()
     try:
+        ensure_products_visibility_column(connection)
         with connection.cursor() as cursor:
             cursor.execute(sql, score_params + where_params)
             return cursor.fetchall()
@@ -4155,13 +4262,14 @@ def get_products_by_category(category_name, filters=None):
     connection = get_db_connection()
     try:
         ensure_products_schema(connection)
+        ensure_products_visibility_column(connection)
         brand = filters.get("brand", "")
         color = filters.get("color", "")
         min_price = _parse_price(filters.get("min_price"))
         max_price = _parse_price(filters.get("max_price"))
         availability = filters.get("availability", "")
 
-        where_parts = ["category = %s"]
+        where_parts = ["category = %s", "(is_hidden IS NULL OR is_hidden = 0)"]
         params = [category_name]
         if brand:
             where_parts.append("brand = %s")
