@@ -2090,7 +2090,7 @@ def get_product_reviews(conn, product_id, viewer_name=None):
                 """
                 SELECT user_name, rating, comment, created_at, is_seed, review_photo, review_photo_approved
                 FROM product_reviews
-                WHERE product_id = %s
+                WHERE product_id = %s AND TRIM(comment) <> ''
                 ORDER BY created_at DESC, id DESC
                 """,
                 (product_id,),
