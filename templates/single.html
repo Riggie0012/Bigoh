@@ -366,7 +366,7 @@
               {% if reviews and reviews|length > 0 %}
                 {% for r in reviews %}
                 <div class="review-item">
-                  <div class="text-warning small mb-1">
+                  <div class="text-warning rating-stars mb-1">
                     {% for i in range(1, 6) %}
                       {% if i <= (r.rating or 0) %}&#9733;{% else %}&#9734;{% endif %}
                     {% endfor %}

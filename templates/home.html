@@ -129,7 +129,7 @@
 {% set rating_avg = rating.avg if rating and rating.avg is not none else 0 %}
 {% set rating_count = rating.count if rating and rating.count is not none else 0 %}
 <div class="d-flex align-items-center gap-2 mb-2">
-  <span class="text-warning">
+  <span class="text-warning rating-stars">
     {% for i in range(1, 6) %}
       {% if i <= (rating_avg|round(0, 'common')|int) %}&#9733;{% else %}&#9734;{% endif %}
     {% endfor %}
@@ -180,7 +180,7 @@
 {% set rating_avg = rating.avg if rating and rating.avg is not none else 0 %}
 {% set rating_count = rating.count if rating and rating.count is not none else 0 %}
 <div class="d-flex align-items-center gap-2 mb-2">
-  <span class="text-warning">
+  <span class="text-warning rating-stars">
     {% for i in range(1, 6) %}
       {% if i <= (rating_avg|round(0, 'common')|int) %}&#9733;{% else %}&#9734;{% endif %}
     {% endfor %}
@@ -241,7 +241,7 @@
 {% set rating_avg = rating.avg if rating and rating.avg is not none else 0 %}
 {% set rating_count = rating.count if rating and rating.count is not none else 0 %}
 <div class="d-flex align-items-center gap-2 mb-2">
-  <span class="text-warning">
+  <span class="text-warning rating-stars">
     {% for i in range(1, 6) %}
       {% if i <= (rating_avg|round(0, 'common')|int) %}&#9733;{% else %}&#9734;{% endif %}
     {% endfor %}
@@ -289,7 +289,7 @@
 {% set rating_avg = rating.avg if rating and rating.avg is not none else 0 %}
 {% set rating_count = rating.count if rating and rating.count is not none else 0 %}
 <div class="d-flex align-items-center gap-2 mb-2">
-  <span class="text-warning">
+  <span class="text-warning rating-stars">
     {% for i in range(1, 6) %}
       {% if i <= (rating_avg|round(0, 'common')|int) %}&#9733;{% else %}&#9734;{% endif %}
     {% endfor %}
