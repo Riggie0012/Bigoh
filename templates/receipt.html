@@ -121,6 +121,10 @@
     background: #f9fafb;
     font-weight: 700;
   }
+  .print-navbar {
+    border-bottom: 1px solid #e5e7eb;
+    background: #ffffff;
+  }
   .receipt-actions {
     display: flex;
     flex-wrap: wrap;
@@ -130,8 +134,21 @@
     .no-print { display: none !important; }
     body { background: #ffffff !important; }
     .receipt-wrap { border: none; padding: 0; }
+    .print-navbar { border: none; }
   }
 </style>
+{% endblock %}
+{% block navbar %}
+  {% if request.args.get("print") == "1" %}
+    <nav class="print-navbar">
+      <div class="container py-2 d-flex align-items-center gap-2">
+        <img src="{{ url_for('static', filename='images/logo.jpeg') }}" alt="{{ business_name }} logo" style="height:32px;width:auto;">
+        <strong>{{ business_name }}</strong>
+      </div>
+    </nav>
+  {% else %}
+    {{ super() }}
+  {% endif %}
 {% endblock %}
 {% block content %}
 <div class="container py-3">
