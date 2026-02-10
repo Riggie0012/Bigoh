@@ -42,20 +42,18 @@
                 <div class="quality-check"><i class="fa-solid fa-circle-check"></i> Quality checked</div>
                 <div class="flash-sale-old">KSh {{ old_price|round(0, 'ceil') }}</div>
                 {% set rating = ratings.get(item[0]) if ratings is defined else None %}
-                {% if rating and rating.count > 0 %}
-                <div class="d-flex align-items-center gap-2 mb-1">
-                  <span class="text-warning">
-                    {% for i in range(1, 6) %}
-                      {% if i <= (rating.avg|round(0, 'common')|int) %}&#9733;{% else %}&#9734;{% endif %}
-                    {% endfor %}
-                  </span>
-                  <span class="text-muted small">{{ rating.avg }}/5</span>
-                  <span class="text-muted small">({{ rating.count }})</span>
+{% set rating_avg = rating.avg if rating and rating.avg is not none else 0 %}
+{% set rating_count = rating.count if rating and rating.count is not none else 0 %}
+<div class="d-flex align-items-center gap-2 mb-2">
+  <span class="text-warning">
+    {% for i in range(1, 6) %}
+      {% if i <= (rating_avg|round(0, 'common')|int) %}&#9733;{% else %}&#9734;{% endif %}
+    {% endfor %}
+  </span>
+  <span class="text-muted small">{{ rating_avg }}/5</span>
+  <span class="text-muted small">({{ rating_count }})</span>
 </div>
-                {% else %}
-                <div class="text-muted small mb-1">No reviews yet.</div>
-                {% endif %}
-                <div class="flash-sale-stock">{{ remaining }} items left</div>
+<div class="flash-sale-stock">{{ remaining }} items left</div>
                 <div class="flash-sale-bar">
                   <span style="width: {{ bar_pct }}%;"></span>
                 </div>

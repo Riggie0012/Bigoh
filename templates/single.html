@@ -264,7 +264,6 @@
               <div class="text-muted">Category</div>
               <div class="fw-semibold">{{ product[2] }}</div>
             </div>
-            {% if review_count and review_count > 0 %}
             <div class="rating-line">
               <span class="rating-stars">
                 {% for i in range(1, 6) %}
@@ -273,9 +272,6 @@
               </span>
               <span class="text-muted">{{ avg_rating }}/5 · {{ review_count }} reviews</span>
             </div>
-            {% else %}
-            <div class="text-muted small">No reviews yet.</div>
-            {% endif %}
           </div>
           <div class="trust-strip">
             <span><i class="fa-solid fa-lock"></i> Secure checkout (SSL)</span>
