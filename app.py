@@ -2090,7 +2090,7 @@ def get_product_reviews(conn, product_id, viewer_name=None):
                 """
                 SELECT user_name, rating, comment, created_at, is_seed, review_photo, review_photo_approved
                 FROM product_reviews
-                WHERE product_id = %s AND is_seed = 0
+                WHERE product_id = %s
                 ORDER BY created_at DESC, id DESC
                 """,
                 (product_id,),
@@ -2102,7 +2102,7 @@ def get_product_reviews(conn, product_id, viewer_name=None):
                     AVG(rating),
                     COUNT(*)
                 FROM product_reviews
-                WHERE product_id = %s AND is_seed = 0
+                WHERE product_id = %s
                 """,
                 (product_id,),
             )
@@ -2113,7 +2113,7 @@ def get_product_reviews(conn, product_id, viewer_name=None):
                 """
                 SELECT rating, COUNT(*)
                 FROM product_reviews
-                WHERE product_id = %s AND is_seed = 0
+                WHERE product_id = %s
                 GROUP BY rating
                 """,
                 (product_id,),
@@ -2197,7 +2197,7 @@ def get_ratings_for_products(conn, product_ids):
                     AVG(rating),
                     COUNT(*)
                 FROM product_reviews
-                WHERE is_seed = 0 AND product_id IN ({placeholders})
+                WHERE product_id IN ({placeholders})
                 GROUP BY product_id
                 """,
                 tuple(ids),
