@@ -63,11 +63,14 @@ BUSINESS_NAME = os.getenv("BUSINESS_NAME", "Bigoh")
 BUSINESS_ADDRESS = os.getenv("BUSINESS_ADDRESS", "Donholm Caltex, Nairobi")
 BUSINESS_REG_NO = os.getenv("BUSINESS_REG_NO", "")
 BUSINESS_REG_BODY = os.getenv("BUSINESS_REG_BODY", "")
+BUSINESS_LOGO = os.getenv("BUSINESS_LOGO", "images/logo.jpeg")
 SUPPORT_EMAIL = os.getenv("SUPPORT_EMAIL", "riggie0012@gmail.com")
 SUPPORT_EMAIL_ADMIN = os.getenv("SUPPORT_EMAIL_ADMIN", "junioronunga8@gmail.com")
 SUPPORT_PHONE = os.getenv("SUPPORT_PHONE", "0759 808 915")
 SUPPORT_WHATSAPP = os.getenv("SUPPORT_WHATSAPP", "254759808915")
 SUPPORT_HOURS = os.getenv("SUPPORT_HOURS", "Daily 8:00am - 8:00pm EAT")
+PAYMENT_DETAILS_TITLE = os.getenv("PAYMENT_DETAILS_TITLE", "Payment Details")
+PAYMENT_DETAILS_LINES = os.getenv("PAYMENT_DETAILS_LINES", "").strip()
 STATIC_CDN_BASE = os.getenv("STATIC_CDN_BASE", "").strip()
 USE_CLOUDINARY = bool((os.getenv("CLOUDINARY_URL") or os.getenv("CLOUDINARY_CLOUD_NAME")) and cloudinary)
 LOYALTY_ENABLED = os.getenv("LOYALTY_ENABLED", "1") == "1"
@@ -5391,7 +5394,17 @@ def order_receipt(order_id):
 
     items_total = sum(float(_row_at(it, 4, 0) or 0) for it in items)
     order_total = float(_row_at(order, 5, 0) or 0)
+    receipt_date = datetime.now()
 
+    payment_details_lines = [line.strip() for line in PAYMENT_DETAILS_LINES.splitlines() if line.strip()]
+    transactions = [
+        {
+            "date": receipt_date.strftime("%A, %B %d, %Y"),
+            "gateway": _row_at(order, 3, ""),
+            "transaction_id": reference,
+            "amount": order_total,
+        }
+    ]
     return render_template(
         "receipt.html",
         order=order,
@@ -5402,6 +5415,7 @@ def order_receipt(order_id):
         items_total=items_total,
         order_total=order_total,
         customer=user,
+        business_logo=image_url(BUSINESS_LOGO),
         business_name=BUSINESS_NAME,
         business_address=BUSINESS_ADDRESS,
         business_reg_no=BUSINESS_REG_NO,
@@ -5409,7 +5423,10 @@ def order_receipt(order_id):
         support_email=SUPPORT_EMAIL,
         support_phone=SUPPORT_PHONE,
         support_whatsapp=SUPPORT_WHATSAPP,
-        receipt_date=datetime.now(),
+        receipt_date=receipt_date,
+        payment_details_title=PAYMENT_DETAILS_TITLE,
+        payment_details_lines=payment_details_lines,
+        transactions=transactions,
     )
 
 

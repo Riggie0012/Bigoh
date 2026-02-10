@@ -5,46 +5,126 @@
   .receipt-wrap {
     background: #ffffff;
     border: 1px solid #e5e7eb;
-    border-radius: 16px;
-    padding: 24px;
+    border-radius: 10px;
+    padding: 24px 28px 28px;
+    position: relative;
+    overflow: hidden;
+  }
+  .paid-ribbon {
+    position: absolute;
+    top: 18px;
+    right: -36px;
+    transform: rotate(45deg);
+    background: #8dd34a;
+    color: #ffffff;
+    font-weight: 700;
+    padding: 6px 48px;
+    font-size: 12px;
+    letter-spacing: 1px;
   }
   .receipt-header {
     display: flex;
     flex-wrap: wrap;
     gap: 16px;
     justify-content: space-between;
-    border-bottom: 1px dashed #e5e7eb;
-    padding-bottom: 16px;
-    margin-bottom: 16px;
+    align-items: flex-start;
   }
-  .receipt-meta {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  .receipt-logo {
+    display: flex;
+    align-items: center;
     gap: 12px;
-    margin-top: 8px;
   }
-  .meta-label {
+  .receipt-logo img {
+    height: 40px;
+    width: auto;
+  }
+  .payment-details {
+    text-align: right;
     font-size: 12px;
-    color: #6b7280;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
+    color: #374151;
+    white-space: pre-line;
   }
-  .meta-value {
+  .invoice-bar {
+    margin-top: 14px;
+    background: #f3f4f6;
+    padding: 10px 12px;
+    font-size: 13px;
     font-weight: 600;
+  }
+  .invoice-meta {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 8px;
+    margin-top: 6px;
+    font-size: 12px;
+    color: #4b5563;
+  }
+  .invoice-section {
+    margin-top: 14px;
+    font-size: 12px;
+  }
+  .invoice-section strong {
+    display: block;
+    margin-bottom: 4px;
+  }
+  .invoice-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 10px;
+    font-size: 12px;
+  }
+  .invoice-table th,
+  .invoice-table td {
+    border: 1px solid #e5e7eb;
+    padding: 6px 8px;
+  }
+  .invoice-table th {
+    background: #f9fafb;
+    text-transform: uppercase;
+    font-size: 11px;
+    letter-spacing: 0.04em;
+  }
+  .text-end { text-align: right; }
+  .summary-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 8px;
+    font-size: 12px;
+  }
+  .summary-table td {
+    border: 1px solid #e5e7eb;
+    padding: 6px 8px;
+  }
+  .summary-table td:first-child {
+    text-align: right;
+    font-weight: 600;
+  }
+  .summary-table td:last-child {
+    text-align: right;
+    width: 150px;
+  }
+  .transactions {
+    margin-top: 18px;
+    font-size: 12px;
+  }
+  .transactions table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 6px;
+  }
+  .transactions th,
+  .transactions td {
+    border: 1px solid #e5e7eb;
+    padding: 6px 8px;
+  }
+  .transactions th {
+    background: #f9fafb;
+    font-weight: 700;
   }
   .receipt-actions {
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
-  }
-  .totals {
-    max-width: 320px;
-    margin-left: auto;
-  }
-  .totals-row {
-    display: flex;
-    justify-content: space-between;
-    margin-top: 8px;
   }
   @media print {
     .no-print { display: none !important; }
@@ -56,99 +136,111 @@
 {% block content %}
 <div class="container py-3">
   <div class="receipt-wrap">
+    <div class="paid-ribbon">PAID</div>
     <div class="receipt-header">
-      <div>
-        <h3 class="mb-1">{{ business_name }}</h3>
-        <div class="text-muted">{{ business_address }}</div>
-        {% if business_reg_no %}
-        <div class="text-muted">Reg: {{ business_reg_body }} {{ business_reg_no }}</div>
+      <div class="receipt-logo">
+        <img src="{{ business_logo }}" alt="{{ business_name }} logo">
+        <div>
+          <div><strong>{{ business_name }}</strong></div>
+          <div class="text-muted">{{ business_address }}</div>
+        </div>
+      </div>
+      <div class="payment-details">
+        <strong>{{ payment_details_title }}</strong>
+        {% if payment_details_lines|length %}
+        <div>
+          {% for line in payment_details_lines %}
+          {{ line }}<br>
+          {% endfor %}
+        </div>
+        {% else %}
+        <div>Payment method: {{ order[3] }}</div>
         {% endif %}
       </div>
-      <div class="text-end">
-        <h5 class="mb-1">Official Receipt</h5>
-        <div class="text-muted">Reference: {{ reference }}</div>
-        <div class="text-muted">Order ID: #{{ order[0] }}</div>
-      </div>
     </div>
 
-    <div class="receipt-meta">
-      <div>
-        <div class="meta-label">Status</div>
-        <div class="meta-value">{{ order[4] }}</div>
-      </div>
-      <div>
-        <div class="meta-label">Payment</div>
-        <div class="meta-value">{{ order[3] }}</div>
-      </div>
-      <div>
-        <div class="meta-label">Delivery</div>
-        <div class="meta-value">{{ order[2] }}</div>
-      </div>
-      <div>
-        <div class="meta-label">Issued</div>
-        <div class="meta-value">{{ receipt_date.strftime("%b %d, %Y %I:%M %p") }}</div>
-      </div>
-      <div>
-        <div class="meta-label">Customer</div>
-        <div class="meta-value">{{ customer[0] }}</div>
-        {% if customer[1] %}<div class="text-muted small">{{ customer[1] }}</div>{% endif %}
-        {% if customer[2] %}<div class="text-muted small">{{ customer[2] }}</div>{% endif %}
-      </div>
+    <div class="invoice-bar">Invoice #{{ reference }}</div>
+    <div class="invoice-meta">
+      <div>Invoice Date: {{ receipt_date.strftime("%A, %B %d, %Y") }}</div>
+      <div>Due Date: {{ receipt_date.strftime("%A, %B %d, %Y") }}</div>
     </div>
 
-    <div class="table-responsive mt-3">
-      <table class="table table-striped align-middle">
+    <div class="invoice-section">
+      <strong>Invoiced To</strong>
+      {{ customer[0] }}<br>
+      {% if customer[2] %}{{ customer[2] }}<br>{% endif %}
+      {{ order[2] }}<br>
+      {% if customer[1] %}{{ customer[1] }}{% endif %}
+    </div>
+
+    <table class="invoice-table">
+      <thead>
+        <tr>
+          <th>Description</th>
+          <th class="text-end">Total</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for it in items %}
+        <tr>
+          <td>{{ it[1] }}</td>
+          <td class="text-end">Ksh {{ "{:,.2f}".format(it[4] or 0) }}</td>
+        </tr>
+        {% endfor %}
+        {% if items|length == 0 %}
+        <tr>
+          <td colspan="2" class="text-center text-muted">No items found.</td>
+        </tr>
+        {% endif %}
+      </tbody>
+    </table>
+
+    <table class="summary-table">
+      <tr>
+        <td>Sub Total</td>
+        <td>Ksh {{ "{:,.2f}".format(items_total or 0) }}</td>
+      </tr>
+      <tr>
+        <td>0.00% VAT</td>
+        <td>Ksh 0.00</td>
+      </tr>
+      <tr>
+        <td>Credit</td>
+        <td>{% if discount and discount > 0 %}-Ksh {{ "{:,.2f}".format(discount or 0) }}{% else %}Ksh 0.00{% endif %}</td>
+      </tr>
+      <tr>
+        <td>Total</td>
+        <td><strong>Ksh {{ "{:,.2f}".format(order_total or 0) }}</strong></td>
+      </tr>
+    </table>
+
+    <div class="transactions">
+      <strong>Transactions</strong>
+      <table>
         <thead>
           <tr>
-            <th>Product</th>
-            <th>Unit Price</th>
-            <th>Qty</th>
-            <th>Line Total</th>
+            <th>Transaction Date</th>
+            <th>Gateway</th>
+            <th>Transaction ID</th>
+            <th class="text-end">Amount</th>
           </tr>
         </thead>
         <tbody>
-          {% for it in items %}
+          {% for tx in transactions %}
           <tr>
-            <td>{{ it[1] }}</td>
-            <td>KES {{ "{:,.2f}".format(it[2] or 0) }}</td>
-            <td>{{ it[3] }}</td>
-            <td class="text-danger">KES {{ "{:,.2f}".format(it[4] or 0) }}</td>
+            <td>{{ tx.date }}</td>
+            <td>{{ tx.gateway }}</td>
+            <td>{{ tx.transaction_id }}</td>
+            <td class="text-end">Ksh {{ "{:,.2f}".format(tx.amount or 0) }}</td>
           </tr>
           {% endfor %}
-          {% if items|length == 0 %}
+          {% if transactions|length == 0 %}
           <tr>
-            <td colspan="4" class="text-center text-muted">No items found.</td>
+            <td colspan="4" class="text-center text-muted">No transactions recorded.</td>
           </tr>
           {% endif %}
         </tbody>
       </table>
-    </div>
-
-    <div class="totals">
-      <div class="totals-row">
-        <div>Subtotal</div>
-        <strong>KES {{ "{:,.2f}".format(items_total or 0) }}</strong>
-      </div>
-      {% if discount and discount > 0 %}
-      <div class="totals-row text-success">
-        <div>Discount</div>
-        <strong>-KES {{ "{:,.2f}".format(discount or 0) }}</strong>
-      </div>
-      {% if discount_reason %}
-      <div class="text-muted small mt-1">{{ discount_reason }}</div>
-      {% endif %}
-      {% endif %}
-      <div class="totals-row mt-2">
-        <div>Total</div>
-        <strong class="text-danger">KES {{ "{:,.2f}".format(order_total or 0) }}</strong>
-      </div>
-    </div>
-
-    <div class="mt-3 text-muted small">
-      Support: {{ support_phone }}{% if support_whatsapp %} (WhatsApp {{ support_whatsapp }}){% endif %}{% if support_email %} | {{ support_email }}{% endif %}
-    </div>
-    <div class="text-muted small mt-1">
-      This is a system-generated receipt issued by {{ business_name }}.
     </div>
   </div>
 
