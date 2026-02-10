@@ -6,6 +6,9 @@ import os
 import json
 import uuid
 import shutil
+import base64
+import io
+import hashlib
 from datetime import timedelta, datetime
 from functools import wraps
 import secrets
@@ -26,6 +29,10 @@ try:
 except Exception:
     Image = None
     ImageOps = None
+try:
+    import qrcode
+except Exception:
+    qrcode = None
 try:
     import cloudinary
     import cloudinary.uploader
@@ -389,6 +396,39 @@ def image_url(path):
     except Exception:
         pass
     return url_for("static", filename=path)
+
+
+def _format_hash_chunks(value: str, chunk: int = 4, max_chunks: int = 5) -> str:
+    cleaned = re.sub(r"[^A-Z0-9]", "", value.upper())
+    parts = [cleaned[i : i + chunk] for i in range(0, len(cleaned), chunk)]
+    return "-".join(parts[:max_chunks])
+
+
+def _make_qr_data_uri(payload: str) -> Optional[str]:
+    if not qrcode:
+        return None
+    qr = qrcode.QRCode(border=1, box_size=3)
+    qr.add_data(payload)
+    qr.make(fit=True)
+    img = qr.make_image(fill_color="black", back_color="white")
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    encoded = base64.b64encode(buf.getvalue()).decode("ascii")
+    return f"data:image/png;base64,{encoded}"
+
+
+def _build_scu_info(order_id: int, reference: str, issued_at: datetime, items, total: float):
+    base = f"{order_id}|{reference}|{issued_at.isoformat()}|{len(items)}|{total:.2f}"
+    internal_hash = hashlib.sha1(base.encode("utf-8")).hexdigest().upper()
+    signature_hash = hashlib.sha256((base + "|SCU").encode("utf-8")).hexdigest().upper()
+    return {
+        "date": issued_at.strftime("%Y-%m-%d %H:%M:%S"),
+        "scu_id": f"{reference}",
+        "receipt_number": f"{order_id}",
+        "item_count": f"{len(items)}",
+        "internal_data": _format_hash_chunks(internal_hash, chunk=4, max_chunks=5),
+        "receipt_signature": _format_hash_chunks(signature_hash, chunk=4, max_chunks=6),
+    }
 
 
 def _migrate_static_uploads():
@@ -5261,6 +5301,11 @@ def order_confirmation(order_id):
         discount = float(_row_at(order, discount_idx, 0) or 0)
         discount_reason = _row_at(order, discount_idx + 1, "")
     wa_url = session.get("last_wa_url")
+    customer_name = session.get("username") or (order[1] if order else "Customer")
+    issued_at = datetime.now()
+    qr_payload = f"INVOICE|{reference}|ORDER:{order_id}|TOTAL:{float(order[5] or 0):.2f}|DATE:{issued_at.strftime('%Y-%m-%d')}"
+    qr_data_uri = _make_qr_data_uri(qr_payload)
+    scu_info = _build_scu_info(order_id, reference, issued_at, items, float(order[5] or 0))
     return render_template(
         "order_confirmation.html",
         order=order,
@@ -5269,6 +5314,10 @@ def order_confirmation(order_id):
         wa_url=wa_url,
         discount=discount,
         discount_reason=discount_reason,
+        issued_at=issued_at,
+        qr_data_uri=qr_data_uri,
+        scu_info=scu_info,
+        customer_name=customer_name,
     )
 
 
