@@ -169,6 +169,11 @@
     {{ super() }}
   {% endif %}
 {% endblock %}
+{% block footer %}
+  {% if request.args.get("print") != "1" %}
+    {{ super() }}
+  {% endif %}
+{% endblock %}
 {% block content %}
 {% set is_print = request.args.get("print") == "1" %}
 <div class="container py-3">
