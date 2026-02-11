@@ -776,6 +776,18 @@ def slugify_category(name: str) -> str:
     slug = re.sub(r"[^a-z0-9]+", "-", (name or "").lower()).strip("-")
     return slug or "category"
 
+CATEGORY_LABEL_OVERRIDES = {
+    "waches": "Watches",
+}
+
+
+def normalize_category_label(name: str) -> str:
+    cleaned = str(name or "").strip()
+    if not cleaned:
+        return ""
+    return CATEGORY_LABEL_OVERRIDES.get(cleaned.lower(), cleaned)
+
+
 def get_category_overview(conn=None, limit=None):
     owns_conn = False
     if conn is None:
@@ -807,13 +819,15 @@ def get_category_overview(conn=None, limit=None):
             rows = cur.fetchall() or []
         categories = []
         for row in rows:
-            name = str(_row_at(row, 0, "") or "").strip()
-            if not name:
+            raw_name = str(_row_at(row, 0, "") or "").strip()
+            if not raw_name:
                 continue
+            display_name = normalize_category_label(raw_name)
             categories.append(
                 {
-                    "name": name,
-                    "slug": slugify_category(name),
+                    "name": display_name,
+                    "db_name": raw_name,
+                    "slug": slugify_category(raw_name),
                     "count": int(_row_at(row, 1, 0) or 0),
                     "image": _row_at(row, 2, "") or "images/hero.jpg",
                 }
@@ -2761,7 +2775,7 @@ def home():
     category_rows = get_category_overview(connection, limit=category_limit)
     categories = []
     for row in category_rows:
-        category_name = row.get("name", "")
+        category_name = row.get("db_name") or row.get("name", "")
         if not category_name:
             continue
         cursor.execute(
@@ -2776,7 +2790,8 @@ def home():
         items = cursor.fetchall() or []
         categories.append(
             {
-                "name": category_name,
+                "name": row.get("name") or category_name,
+                "db_name": category_name,
                 "slug": row.get("slug") or slugify_category(category_name),
                 "items": items,
                 "image": row.get("image") or "images/hero.jpg",
@@ -4538,7 +4553,8 @@ def category_dynamic(slug):
         "max_price": request.args.get("max_price", "").strip(),
         "availability": request.args.get("availability", "").strip(),
     }
-    products, brands, colors = get_products_by_category(category["name"], filters)
+    category_db_name = category.get("db_name") or category["name"]
+    products, brands, colors = get_products_by_category(category_db_name, filters)
     conn = get_db_connection()
     try:
         ratings = get_ratings_for_products(conn, [_row_at(row, 0) for row in products])
