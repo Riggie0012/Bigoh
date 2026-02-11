@@ -123,6 +123,22 @@ REVIEW_IMAGE_QUALITY = int(os.getenv("REVIEW_IMAGE_QUALITY", "80"))
 PRODUCT_MAX_IMAGE_BYTES = int(os.getenv("PRODUCT_MAX_IMAGE_BYTES", "2500000"))
 PRODUCT_MAX_IMAGE_PX = int(os.getenv("PRODUCT_MAX_IMAGE_PX", "1600"))
 PRODUCT_IMAGE_QUALITY = int(os.getenv("PRODUCT_IMAGE_QUALITY", "82"))
+
+
+def _safe_float_env(name: str, default: float) -> float:
+    raw = os.getenv(name)
+    if raw is None or str(raw).strip() == "":
+        return float(default)
+    try:
+        return float(raw)
+    except Exception:
+        return float(default)
+
+
+DB_CONNECT_TIMEOUT = _safe_float_env("DB_CONNECT_TIMEOUT", 4.0)
+DB_READ_TIMEOUT = _safe_float_env("DB_READ_TIMEOUT", 8.0)
+DB_WRITE_TIMEOUT = _safe_float_env("DB_WRITE_TIMEOUT", 8.0)
+DB_FAILURE_BACKOFF_SECONDS = _safe_float_env("DB_FAILURE_BACKOFF_SECONDS", 20.0)
 BRAND_PARTNERS = [
     p.strip()
     for p in os.getenv("BRAND_PARTNERS", "").split(",")
@@ -1392,7 +1408,35 @@ def _parse_db_url(db_url: str) -> dict:
     }
 
 
+_db_connect_block_until = 0.0
+
+
+def _db_connect_block_remaining_seconds() -> float:
+    if DB_FAILURE_BACKOFF_SECONDS <= 0:
+        return 0.0
+    return max(0.0, _db_connect_block_until - time.monotonic())
+
+
+def _mark_db_connect_failure() -> None:
+    global _db_connect_block_until
+    if DB_FAILURE_BACKOFF_SECONDS <= 0:
+        return
+    _db_connect_block_until = time.monotonic() + DB_FAILURE_BACKOFF_SECONDS
+
+
+def _clear_db_connect_failure() -> None:
+    global _db_connect_block_until
+    _db_connect_block_until = 0.0
+
+
 def get_db_connection():
+    blocked_for = _db_connect_block_remaining_seconds()
+    if blocked_for > 0:
+        wait_seconds = int(blocked_for) + 1
+        raise RuntimeError(
+            f"Database temporarily unavailable. Retry in about {wait_seconds}s."
+        )
+
     db_url = os.getenv("DATABASE_URL") or os.getenv("MYSQL_URL") or os.getenv("DB_URL")
     if db_url:
         try:
@@ -1416,6 +1460,18 @@ def get_db_connection():
     if not host:
         raise RuntimeError("Database host is not set (DB_HOST or DATABASE_URL).")
 
+    running_on_railway = bool(
+        os.getenv("RAILWAY_PROJECT_ID")
+        or os.getenv("RAILWAY_ENVIRONMENT")
+        or os.getenv("RAILWAY_ENVIRONMENT_NAME")
+        or os.getenv("RAILWAY_STATIC_URL")
+    )
+    if host.endswith(".railway.internal") and not running_on_railway:
+        raise RuntimeError(
+            "Database host uses Railway internal DNS but this app is not running on Railway. "
+            "Use the public MySQL host/port or DATABASE_URL."
+        )
+
     ssl_disabled = os.getenv("DB_SSL_DISABLED", "0") == "1"
     sslmode = (query.get("sslmode") or [""])[0].lower()
     ssl_query = (query.get("ssl") or [""])[0].lower()
@@ -1428,16 +1484,19 @@ def get_db_connection():
         password=password,
         database=database,
         port=port,
-        connect_timeout=10,
-        read_timeout=10,
-        write_timeout=10,
+        connect_timeout=max(1, int(DB_CONNECT_TIMEOUT)),
+        read_timeout=max(1, int(DB_READ_TIMEOUT)),
+        write_timeout=max(1, int(DB_WRITE_TIMEOUT)),
     )
     if not ssl_disabled:
         connect_kwargs["ssl"] = {"ssl": {}}
 
     try:
-        return pymysql.connect(**connect_kwargs)
+        conn = pymysql.connect(**connect_kwargs)
+        _clear_db_connect_failure()
+        return conn
     except pymysql.err.OperationalError as exc:
+        _mark_db_connect_failure()
         hint = ""
         if host.endswith(".railway.internal"):
             hint = (
@@ -1446,6 +1505,17 @@ def get_db_connection():
             )
         raise pymysql.err.OperationalError(
             exc.args[0], f"{exc.args[1]}{hint}"
+        ) from exc
+    except OSError as exc:
+        _mark_db_connect_failure()
+        hint = ""
+        if host.endswith(".railway.internal"):
+            hint = (
+                " The host looks like a Railway internal address. "
+                "Use the public MySQL host/port (or DATABASE_URL) when deploying outside Railway."
+            )
+        raise RuntimeError(
+            f"Database connection failed to {host}:{port} ({exc}).{hint}"
         ) from exc
 
 
@@ -2817,79 +2887,95 @@ def has_verified_purchase(conn, user_id: int, product_id: int) -> bool:
 # Default Home route
 @app.route("/")
 def home():
-    connection = get_db_connection()
-
-    category_limit = int(os.getenv("HOME_CATEGORY_LIMIT", "6") or 6)
-    items_limit = int(os.getenv("HOME_CATEGORY_ITEMS", "12") or 12)
-    new_limit = int(os.getenv("NEW_PRODUCTS_LIMIT", "10") or 10)
-    ensure_products_visibility_column(connection)
-    cursor = connection.cursor()
-    category_rows = get_category_overview(connection, limit=category_limit)
-    categories = []
-    for row in category_rows:
-        category_name = row.get("db_name") or row.get("name", "")
-        if not category_name:
-            continue
-        cursor.execute(
-            """
-            SELECT * FROM products
-            WHERE category = %s AND (is_hidden IS NULL OR is_hidden = 0)
-            ORDER BY product_id DESC
-            LIMIT %s
-            """,
-            (category_name, items_limit),
-        )
-        items = cursor.fetchall() or []
-        categories.append(
-            {
-                "name": row.get("name") or category_name,
-                "db_name": category_name,
-                "slug": row.get("slug") or slugify_category(category_name),
-                "items": items,
-                "image": row.get("image") or "images/hero.jpg",
-                "count": row.get("count", 0),
-            }
+    try:
+        connection = get_db_connection()
+    except Exception:
+        app.logger.exception("Home route failed to connect to database.")
+        return render_template(
+            "home.html",
+            categories=[],
+            new_products=[],
+            flash_sales=[],
+            flash_sale_active=False,
+            flash_sale_seconds=0,
+            flash_sale_time_label=format_duration(0),
+            flash_sale_duration_seconds=0,
+            sponsored_products=[],
+            ratings={},
         )
 
-    if table_has_column(connection, "products", "created_at"):
-        sql5 = "SELECT * FROM products WHERE (is_hidden IS NULL OR is_hidden = 0) ORDER BY created_at DESC, product_id DESC LIMIT %s"
-    else:
-        sql5 = "SELECT * FROM products WHERE (is_hidden IS NULL OR is_hidden = 0) ORDER BY product_id DESC LIMIT %s"
-    cursor = connection.cursor()
-    cursor.execute(sql5, (new_limit,))
-    new_products = cursor.fetchall()
+    try:
+        category_limit = int(os.getenv("HOME_CATEGORY_LIMIT", "6") or 6)
+        items_limit = int(os.getenv("HOME_CATEGORY_ITEMS", "12") or 12)
+        new_limit = int(os.getenv("NEW_PRODUCTS_LIMIT", "10") or 10)
+        ensure_products_visibility_column(connection)
+        cursor = connection.cursor()
+        category_rows = get_category_overview(connection, limit=category_limit)
+        categories = []
+        for row in category_rows:
+            category_name = row.get("db_name") or row.get("name", "")
+            if not category_name:
+                continue
+            cursor.execute(
+                """
+                SELECT * FROM products
+                WHERE category = %s AND (is_hidden IS NULL OR is_hidden = 0)
+                ORDER BY product_id DESC
+                LIMIT %s
+                """,
+                (category_name, items_limit),
+            )
+            items = cursor.fetchall() or []
+            categories.append(
+                {
+                    "name": row.get("name") or category_name,
+                    "db_name": category_name,
+                    "slug": row.get("slug") or slugify_category(category_name),
+                    "items": items,
+                    "image": row.get("image") or "images/hero.jpg",
+                    "count": row.get("count", 0),
+                }
+            )
 
-    sponsored_products = get_sponsored_products(connection, limit=8)
+        if table_has_column(connection, "products", "created_at"):
+            sql5 = "SELECT * FROM products WHERE (is_hidden IS NULL OR is_hidden = 0) ORDER BY created_at DESC, product_id DESC LIMIT %s"
+        else:
+            sql5 = "SELECT * FROM products WHERE (is_hidden IS NULL OR is_hidden = 0) ORDER BY product_id DESC LIMIT %s"
+        cursor = connection.cursor()
+        cursor.execute(sql5, (new_limit,))
+        new_products = cursor.fetchall()
 
-    flash_state = get_flash_sale_state(connection)
-    flash_sales = flash_state["items"]
-    flash_sale_active = flash_state["active"]
-    flash_sale_seconds = flash_state["seconds_left"]
-    flash_sale_time_label = format_duration(flash_sale_seconds if flash_sale_active else 0)
-    flash_sale_duration_seconds = flash_state["duration_seconds"]
+        sponsored_products = get_sponsored_products(connection, limit=8)
 
-    rating_ids = []
-    for group in (new_products, sponsored_products, flash_sales):
-        rating_ids.extend([_row_at(row, 0) for row in group] if group else [])
-    for category in categories:
-        items = category.get("items") or []
-        rating_ids.extend([_row_at(row, 0) for row in items] if items else [])
-    ratings = get_ratings_for_products(connection, rating_ids)
+        flash_state = get_flash_sale_state(connection)
+        flash_sales = flash_state["items"]
+        flash_sale_active = flash_state["active"]
+        flash_sale_seconds = flash_state["seconds_left"]
+        flash_sale_time_label = format_duration(flash_sale_seconds if flash_sale_active else 0)
+        flash_sale_duration_seconds = flash_state["duration_seconds"]
 
-    connection.close()
+        rating_ids = []
+        for group in (new_products, sponsored_products, flash_sales):
+            rating_ids.extend([_row_at(row, 0) for row in group] if group else [])
+        for category in categories:
+            items = category.get("items") or []
+            rating_ids.extend([_row_at(row, 0) for row in items] if items else [])
+        ratings = get_ratings_for_products(connection, rating_ids)
 
-    return render_template(
-        "home.html",
-        categories=categories,
-        new_products=new_products,
-        flash_sales=flash_sales,
-        flash_sale_active=flash_sale_active,
-        flash_sale_seconds=flash_sale_seconds,
-        flash_sale_time_label=flash_sale_time_label,
-        flash_sale_duration_seconds=flash_sale_duration_seconds,
-        sponsored_products=sponsored_products,
-        ratings=ratings,
-    )
+        return render_template(
+            "home.html",
+            categories=categories,
+            new_products=new_products,
+            flash_sales=flash_sales,
+            flash_sale_active=flash_sale_active,
+            flash_sale_seconds=flash_sale_seconds,
+            flash_sale_time_label=flash_sale_time_label,
+            flash_sale_duration_seconds=flash_sale_duration_seconds,
+            sponsored_products=sponsored_products,
+            ratings=ratings,
+        )
+    finally:
+        connection.close()
 
 
 #Single_item route
