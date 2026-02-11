@@ -9,6 +9,7 @@ import shutil
 import base64
 import io
 import hashlib
+import shlex
 from datetime import timedelta, datetime
 from functools import wraps
 import secrets
@@ -786,6 +787,10 @@ WATCH_CATEGORY_ALIASES = {
     "waches",
     "men watch",
     "ladies watch",
+    "women watch",
+    "female watch",
+    "gents watch",
+    "male watch",
 }
 
 
@@ -3872,43 +3877,106 @@ def logout():
 def search():
     q = request.args.get("q", "").strip()
     if not q:
-        return render_template("search_results.html", results=[], q="")
+        return render_template(
+            "search_results.html",
+            results=[],
+            q="",
+            ratings={},
+            did_you_mean="",
+            category_filter="",
+            brand_filter="",
+            availability_filter="all",
+            min_rating=0,
+            sort="popularity",
+            min_price=0,
+            max_price=0,
+            base_min=0,
+            base_max=0,
+            categories=[],
+            brands=[],
+            total_results=0,
+        )
 
     category_filter = request.args.get("category", "").strip()
     brand_filter = request.args.get("brand", "").strip()
-    availability_filter = request.args.get("availability", "all").strip()
+    availability_filter = request.args.get("availability", "all").strip().lower()
     min_rating_raw = request.args.get("min_rating", "").strip()
     sort = request.args.get("sort", "popularity").strip()
     min_price_raw = request.args.get("min_price", "").strip()
     max_price_raw = request.args.get("max_price", "").strip()
+    if availability_filter not in {"all", "in_stock"}:
+        availability_filter = "all"
+    if sort not in {"popularity", "newest", "price_asc", "price_desc", "rating"}:
+        sort = "popularity"
 
-    results = advanced_product_search(q)
+    results = advanced_product_search(q, limit=120)
+    tokenized_query = _tokenize_search(q)
+    plain_query_tokens = [tok for tok in tokenized_query if ":" not in tok]
+    corrected_tokens = [
+        _canonical_search_term(tok)
+        for tok in plain_query_tokens
+    ]
+    corrected_query = " ".join([tok for tok in corrected_tokens if tok]).strip()
+    plain_query_text = " ".join(plain_query_tokens).strip()
+    did_you_mean = ""
+    if (
+        plain_query_text
+        and corrected_query
+        and corrected_query != _normalize_search_text(plain_query_text)
+    ):
+        did_you_mean = corrected_query
+    if not results and corrected_query and corrected_query != _normalize_search_text(q):
+        results = advanced_product_search(corrected_query, limit=120)
 
-    category_counts = {}
-    brand_counts = {}
-    for row in results:
-        category = str(_row_at(row, 2, "") or "").strip()
-        brand = str(_row_at(row, 3, "") or "").strip()
-        if category:
-            category_counts[category] = category_counts.get(category, 0) + 1
-        if brand:
-            brand_counts[brand] = brand_counts.get(brand, 0) + 1
+    def summarize_categories(rows):
+        summary = {}
+        for row in rows:
+            raw_category = str(_row_at(row, 2, "") or "").strip()
+            if not raw_category:
+                continue
+            display_name = _bucket_category_for_search(raw_category)
+            key = _normalize_search_text(display_name)
+            if not key:
+                continue
+            if key not in summary:
+                summary[key] = {"name": display_name, "count": 0}
+            summary[key]["count"] += 1
+        return summary
+
+    def summarize_brands(rows):
+        summary = {}
+        for row in rows:
+            brand_name = str(_row_at(row, 3, "") or "").strip()
+            key = _normalize_search_text(brand_name)
+            if not key:
+                continue
+            if key not in summary:
+                summary[key] = {"name": brand_name, "count": 0}
+            summary[key]["count"] += 1
+        return summary
+
+    category_summary = summarize_categories(results)
+    brand_summary = summarize_brands(results)
 
     if not category_filter and not brand_filter:
-        lowered = q.lower()
-        brand_match = next((b for b in brand_counts.keys() if b.lower() == lowered), None)
-        category_match = next((c for c in category_counts.keys() if c.lower() == lowered), None)
-        if brand_match:
-            brand_filter = brand_match
-        elif category_match:
-            category_filter = category_match
-        else:
-            partial_brands = [b for b in brand_counts.keys() if lowered in b.lower()]
-            if len(partial_brands) == 1:
-                brand_filter = partial_brands[0]
-            elif partial_brands:
-                # pick the brand with the most hits if multiple partial matches
-                brand_filter = max(partial_brands, key=lambda b: brand_counts.get(b, 0))
+        query_tokens = tokenized_query
+        if len(query_tokens) == 1:
+            lowered = _canonical_search_term(query_tokens[0])
+            category_match = category_summary.get(lowered)
+            brand_match = brand_summary.get(lowered)
+            if category_match:
+                category_filter = category_match["name"]
+            elif brand_match:
+                brand_filter = brand_match["name"]
+
+    if category_filter:
+        category_key = _normalize_search_text(category_filter)
+        category_filter = category_summary.get(category_key, {}).get(
+            "name", _bucket_category_for_search(category_filter)
+        )
+    if brand_filter:
+        brand_key = _normalize_search_text(brand_filter)
+        brand_filter = brand_summary.get(brand_key, {}).get("name", brand_filter)
 
     try:
         min_price = float(min_price_raw) if min_price_raw else None
@@ -3930,14 +3998,15 @@ def search():
         conn.close()
 
     filtered = []
+    selected_brand_key = _normalize_search_text(brand_filter)
     for row in results:
         if category_filter:
             category = str(_row_at(row, 2, "") or "").strip()
-            if category != category_filter:
+            if not _category_matches_filter(category, category_filter):
                 continue
-        if brand_filter:
+        if selected_brand_key:
             brand = str(_row_at(row, 3, "") or "").strip()
-            if brand != brand_filter:
+            if _normalize_search_text(brand) != selected_brand_key:
                 continue
         price_val = _row_at(row, 4, None)
         try:
@@ -3962,15 +4031,8 @@ def search():
                 continue
         filtered.append(row)
 
-    category_counts = {}
-    brand_counts = {}
-    for row in filtered:
-        category = str(_row_at(row, 2, "") or "").strip()
-        brand = str(_row_at(row, 3, "") or "").strip()
-        if category:
-            category_counts[category] = category_counts.get(category, 0) + 1
-        if brand:
-            brand_counts[brand] = brand_counts.get(brand, 0) + 1
+    filtered_category_summary = summarize_categories(filtered)
+    filtered_brand_summary = summarize_brands(filtered)
 
     prices = []
     for row in filtered:
@@ -4008,11 +4070,11 @@ def search():
         )
 
     categories = sorted(
-        [{"name": k, "count": v} for k, v in category_counts.items()],
+        list(filtered_category_summary.values()),
         key=lambda item: item["name"].lower(),
     )
     brands = sorted(
-        [{"name": k, "count": v} for k, v in brand_counts.items()],
+        list(filtered_brand_summary.values()),
         key=lambda item: item["name"].lower(),
     )
 
@@ -4021,6 +4083,7 @@ def search():
         results=filtered,
         q=q,
         ratings=ratings,
+        did_you_mean=did_you_mean,
         category_filter=category_filter,
         brand_filter=brand_filter,
         availability_filter=availability_filter,
@@ -4039,56 +4102,9 @@ def search():
 @app.route("/search_suggestions")
 def search_suggestions():
     q = request.args.get("q", "").strip()
-    if len(q) < 2:
+    if len(_normalize_search_text(q)) < 2:
         return jsonify([])
-
-    q_lower = q.lower()
-    like = f"%{q_lower}%"
-    prefix = f"{q_lower}%"
-    conn = get_db_connection()
-    try:
-        with conn.cursor() as cur:
-            cur.execute(
-                """
-                SELECT product_id, product_name, category, brand, price, stock, description, image_url
-                FROM products
-                WHERE LOWER(product_name) LIKE %s
-                   OR LOWER(category) LIKE %s
-                   OR LOWER(brand) LIKE %s
-                   OR LOWER(description) LIKE %s
-                   OR SOUNDEX(product_name) = SOUNDEX(%s)
-                   OR SOUNDEX(brand) = SOUNDEX(%s)
-                ORDER BY
-                  CASE
-                    WHEN LOWER(product_name) = %s THEN 6
-                    WHEN LOWER(product_name) LIKE %s THEN 5
-                    WHEN LOWER(brand) = %s THEN 4
-                    WHEN LOWER(brand) LIKE %s THEN 3
-                    WHEN LOWER(category) LIKE %s THEN 2
-                    WHEN LOWER(description) LIKE %s THEN 1
-                    ELSE 0
-                  END DESC,
-                  product_id DESC
-                LIMIT 8
-                """,
-                (
-                    like,
-                    like,
-                    like,
-                    like,
-                    q_lower,
-                    q_lower,
-                    q_lower,
-                    prefix,
-                    q_lower,
-                    prefix,
-                    like,
-                    like,
-                ),
-            )
-            rows = cur.fetchall() or []
-    finally:
-        conn.close()
+    rows = advanced_product_search(q, limit=8, include_rating_score=False)
 
     suggestions = []
     for row in rows:
@@ -4096,7 +4112,7 @@ def search_suggestions():
             {
                 "id": _row_at(row, 0),
                 "name": _row_at(row, 1),
-                "category": _row_at(row, 2),
+                "category": _bucket_category_for_search(_row_at(row, 2)),
                 "brand": _row_at(row, 3),
                 "price": _row_at(row, 4),
                 "stock": _row_at(row, 5),
@@ -4107,14 +4123,50 @@ def search_suggestions():
     return jsonify(suggestions)
 
 
+SEARCH_TERM_CORRECTIONS = {
+    "whatch": "watch",
+    "whaches": "watches",
+    "whatches": "watches",
+    "wath": "watch",
+    "wacth": "watch",
+    "wach": "watch",
+    "watche": "watch",
+    "waches": "watches",
+    "jersy": "jersey",
+    "jerze": "jersey",
+    "snikers": "sneakers",
+    "shoos": "shoes",
+    "electrical": "electricals",
+    "electronic": "electricals",
+    "cleaner": "cleaning",
+}
+
+
+def _normalize_search_text(value: str) -> str:
+    lowered = str(value or "").strip().lower()
+    lowered = re.sub(r"[^\w\s-]", " ", lowered)
+    lowered = re.sub(r"\s+", " ", lowered).strip()
+    return lowered
+
+
+def _canonical_search_term(term: str) -> str:
+    cleaned = _normalize_search_text(term)
+    if not cleaned:
+        return ""
+    return SEARCH_TERM_CORRECTIONS.get(cleaned, cleaned)
+
+
 def _tokenize_search(raw_query):
-    tokens = re.findall(r'"[^"]+"|\S+', raw_query)
+    raw = str(raw_query or "").strip()
+    if not raw:
+        return []
+    try:
+        tokens = shlex.split(raw)
+    except ValueError:
+        tokens = re.findall(r'"[^"]+"|\S+', raw)
     cleaned = []
     for tok in tokens:
-        tok = tok.strip()
-        if tok.startswith('"') and tok.endswith('"'):
-            tok = tok[1:-1]
-        tok = tok.strip()
+        tok = str(tok or "").strip()
         if tok:
             cleaned.append(tok)
     return cleaned
@@ -4122,24 +4174,106 @@ def _tokenize_search(raw_query):
 
 def _expand_synonyms(term: str) -> list:
     synonyms = {
-        "jersey": ["kit", "football shirt", "soccer jersey"],
-        "kit": ["jersey", "football shirt", "soccer jersey"],
-        "watch": ["watches", "wristwatch", "timepiece", "waches"],
-        "watches": ["watch", "wristwatch", "timepiece", "waches"],
-        "waches": ["watch", "watches", "wristwatch", "timepiece"],
+        "jersey": ["jerseys", "kit", "football shirt", "soccer jersey"],
+        "jerseys": ["jersey", "kit", "football shirt", "soccer jersey"],
+        "kit": ["jersey", "jerseys", "football shirt", "soccer jersey"],
+        "watch": ["watches", "wristwatch", "timepiece", "waches", "ladies watch", "men watch"],
+        "watches": ["watch", "wristwatch", "timepiece", "waches", "ladies watch", "men watch"],
+        "waches": ["watch", "watches", "wristwatch", "timepiece", "ladies watch", "men watch"],
+        "ladies watch": ["women watch", "female watch", "watch"],
+        "men watch": ["male watch", "gents watch", "watch"],
         "ladies": ["women", "female"],
         "men": ["male", "gents"],
         "cleaning": ["cleaner", "cleaners", "detergent"],
+        "cleaners": ["cleaner", "cleaning", "detergent"],
         "sneakers": ["shoes", "trainers"],
         "shoes": ["sneakers", "trainers"],
+        "electricals": ["electronics", "electrical"],
     }
-    key = term.lower()
+    key = _canonical_search_term(term)
     return synonyms.get(key, [])
 
 
-def advanced_product_search(raw_query):
+def _search_term_variants(term: str) -> list:
+    initial = _canonical_search_term(term)
+    if not initial:
+        return []
+
+    variants = []
+    pending = [initial]
+    seen = set()
+    while pending:
+        item = _canonical_search_term(pending.pop(0))
+        if not item or item in seen:
+            continue
+        seen.add(item)
+        variants.append(item)
+        for synonym in _expand_synonyms(item):
+            normalized_syn = _canonical_search_term(synonym)
+            if normalized_syn and normalized_syn not in seen:
+                pending.append(normalized_syn)
+
+    expanded = list(variants)
+    for item in variants:
+        if " " in item:
+            continue
+        if len(item) > 3 and item.endswith("s"):
+            singular = _canonical_search_term(item[:-1])
+            if singular:
+                expanded.append(singular)
+        elif len(item) > 2 and not item.endswith("s"):
+            plural = _canonical_search_term(f"{item}s")
+            if plural:
+                expanded.append(plural)
+
+    deduped = []
+    seen = set()
+    for item in expanded:
+        normalized = _canonical_search_term(item)
+        if normalized and normalized not in seen:
+            seen.add(normalized)
+            deduped.append(normalized)
+    return deduped
+
+
+def _bucket_category_for_search(name: str) -> str:
+    raw = str(name or "").strip()
+    lowered = _normalize_search_text(raw)
+    if lowered in WATCH_CATEGORY_ALIASES:
+        return "Watches"
+    if lowered in {"jersey", "jerseys", "kit"}:
+        return "Jerseys"
+    if lowered in {"shoe", "shoes", "sneaker", "sneakers"}:
+        return "Shoes"
+    return normalize_category_label(raw)
+
+
+def _category_matches_filter(category_name: str, selected_filter: str) -> bool:
+    selected_norm = _normalize_search_text(selected_filter)
+    if not selected_norm:
+        return True
+
+    category_norm = _normalize_search_text(category_name)
+    category_bucket = _normalize_search_text(_bucket_category_for_search(category_name))
+    selected_bucket = _normalize_search_text(_bucket_category_for_search(selected_filter))
+
+    return (
+        category_norm == selected_norm
+        or category_bucket == selected_norm
+        or category_norm == selected_bucket
+        or category_bucket == selected_bucket
+    )
+
+
+def advanced_product_search(raw_query, limit=60, include_rating_score=True):
+    try:
+        limit_value = int(limit)
+    except (TypeError, ValueError):
+        limit_value = 60
+    limit_value = max(1, min(limit_value, 120))
+
     tokens = _tokenize_search(raw_query)
-    raw_lower = raw_query.strip().lower()
+    raw_lower = _normalize_search_text(raw_query)
 
     general_terms = []
     name_terms = []
@@ -4149,21 +4283,29 @@ def advanced_product_search(raw_query):
     min_price = None
     max_price = None
 
+    field_aliases = {
+        "cat": "category",
+        "title": "name",
+        "desc": "description",
+    }
+
     for tok in tokens:
         if ":" in tok:
             key, value = tok.split(":", 1)
-            key = key.lower().strip()
-            value = value.strip()
-            if key in {"category", "cat"}:
+            key = field_aliases.get(_normalize_search_text(key), _normalize_search_text(key))
+            value = str(value or "").strip()
+            if not value:
+                continue
+            if key in {"category"}:
                 category_terms.append(value)
                 continue
             if key in {"brand"}:
                 brand_terms.append(value)
                 continue
-            if key in {"name", "title"}:
+            if key in {"name"}:
                 name_terms.append(value)
                 continue
-            if key in {"desc", "description"}:
+            if key in {"description"}:
                 desc_terms.append(value)
                 continue
             if key in {"price"}:
@@ -4213,12 +4355,9 @@ def advanced_product_search(raw_query):
         score_params.append(term)
 
     def add_term_group(term, weight_scale=1.0):
-        variants = [term] + _expand_synonyms(term)
+        variants = _search_term_variants(term)[:10]
         term_clauses = []
         for v in variants:
-            v = v.strip().lower()
-            if not v:
-                continue
             like = f"%{v}%"
             term_clauses.append(
                 "(LOWER(p.product_name) LIKE %s OR LOWER(p.category) LIKE %s OR LOWER(p.brand) LIKE %s OR LOWER(p.description) LIKE %s "
@@ -4247,31 +4386,46 @@ def advanced_product_search(raw_query):
         add_term_group(term, 1.0)
 
     for term in name_terms:
-        add_term_group(term, 1.2)
+        add_term_group(term, 1.25)
 
     for term in brand_terms:
-        add_term_group(term, 1.1)
+        add_term_group(term, 1.15)
 
     for term in category_terms:
-        add_term_group(term, 1.05)
+        add_term_group(term, 1.1)
 
     for term in desc_terms:
         add_term_group(term, 0.9)
 
+    def add_query_scores(query_text: str, weight_scale=1.0):
+        query_term = _canonical_search_term(query_text)
+        if not query_term:
+            return
+        w = weight_scale
+        add_score("LOWER(p.product_name)", query_term, int(40 * w))
+        add_score("LOWER(p.brand)", query_term, int(24 * w))
+        add_score("LOWER(p.category)", query_term, int(18 * w))
+        add_score("LOWER(p.product_name)", f"{query_term}%", int(26 * w), like=True)
+        add_score("LOWER(p.brand)", f"{query_term}%", int(14 * w), like=True)
+        add_score("LOWER(p.category)", f"{query_term}%", int(10 * w), like=True)
+        add_score("LOWER(p.product_name)", f"%{query_term}%", int(12 * w), like=True)
+        add_score("LOWER(p.brand)", f"%{query_term}%", int(7 * w), like=True)
+        add_score("LOWER(p.category)", f"%{query_term}%", int(5 * w), like=True)
+        add_score("LOWER(p.description)", f"%{query_term}%", int(3 * w), like=True)
+        add_soundex_score("p.product_name", query_term, int(5 * w))
+        add_soundex_score("p.brand", query_term, int(3 * w))
+        add_soundex_score("p.category", query_term, int(2 * w))
+
     if raw_lower:
-        add_score("LOWER(p.product_name)", raw_lower, 40)
-        add_score("LOWER(p.brand)", raw_lower, 24)
-        add_score("LOWER(p.category)", raw_lower, 18)
-        add_score("LOWER(p.product_name)", f"{raw_lower}%", 26, like=True)
-        add_score("LOWER(p.brand)", f"{raw_lower}%", 14, like=True)
-        add_score("LOWER(p.category)", f"{raw_lower}%", 10, like=True)
-        add_score("LOWER(p.product_name)", f"%{raw_lower}%", 12, like=True)
-        add_score("LOWER(p.brand)", f"%{raw_lower}%", 7, like=True)
-        add_score("LOWER(p.category)", f"%{raw_lower}%", 5, like=True)
-        add_score("LOWER(p.description)", f"%{raw_lower}%", 3, like=True)
-        add_soundex_score("p.product_name", raw_lower, 5)
-        add_soundex_score("p.brand", raw_lower, 3)
-        add_soundex_score("p.category", raw_lower, 2)
+        add_query_scores(raw_lower, 1.0)
+
+    corrected_tokens = [
+        _canonical_search_term(tok)
+        for tok in (general_terms + name_terms + brand_terms + category_terms + desc_terms)
+    ]
+    corrected_query = " ".join([tok for tok in corrected_tokens if tok]).strip()
+    if corrected_query and corrected_query != raw_lower:
+        add_query_scores(corrected_query, 0.9)
 
     where_parts.append("(p.is_hidden IS NULL OR p.is_hidden = 0)")
 
@@ -4293,25 +4447,38 @@ def advanced_product_search(raw_query):
     if score_parts:
         score_expr = " + ".join(score_parts)
 
-    sql = f"""
-        SELECT
-            p.*,
-            COALESCE(r.avg_rating, 0) AS avg_rating,
-            COALESCE(r.rating_count, 0) AS rating_count,
-            ({score_expr})
-              + (COALESCE(r.avg_rating, 0) * 2)
-              + (LEAST(COALESCE(r.rating_count, 0), 50) * 0.2) AS score
-        FROM products p
-        LEFT JOIN (
-            SELECT product_id, AVG(rating) AS avg_rating, COUNT(*) AS rating_count
-            FROM product_reviews
-            WHERE is_seed = 0
-            GROUP BY product_id
-        ) r ON r.product_id = p.product_id
-        {where_clause}
-        ORDER BY score DESC, rating_count DESC, avg_rating DESC, p.product_name
-        LIMIT 60
-    """
+    if include_rating_score:
+        sql = f"""
+            SELECT
+                p.*,
+                COALESCE(r.avg_rating, 0) AS avg_rating,
+                COALESCE(r.rating_count, 0) AS rating_count,
+                ({score_expr})
+                  + (COALESCE(r.avg_rating, 0) * 2)
+                  + (LEAST(COALESCE(r.rating_count, 0), 50) * 0.2) AS score
+            FROM products p
+            LEFT JOIN (
+                SELECT product_id, AVG(rating) AS avg_rating, COUNT(*) AS rating_count
+                FROM product_reviews
+                WHERE is_seed = 0
+                GROUP BY product_id
+            ) r ON r.product_id = p.product_id
+            {where_clause}
+            ORDER BY score DESC, rating_count DESC, avg_rating DESC, p.product_name
+            LIMIT {limit_value}
+        """
+    else:
+        sql = f"""
+            SELECT
+                p.*,
+                0 AS avg_rating,
+                0 AS rating_count,
+                ({score_expr}) AS score
+            FROM products p
+            {where_clause}
+            ORDER BY score DESC, p.product_name
+            LIMIT {limit_value}
+        """
 
     connection = get_db_connection()
     try:
