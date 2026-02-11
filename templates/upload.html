@@ -31,14 +31,15 @@
 
             <div class="mb-3">
               <label class="form-label">Category</label>
-              <input type="text" name="category" class="form-control" list="categoryList" placeholder="Choose or type a category..." required>
-              <datalist id="categoryList">
-                {% if categories %}
-                  {% for cat in categories %}
-                    <option value="{{ cat.name }}"></option>
-                  {% endfor %}
-                {% endif %}
-              </datalist>
+              <select name="category" class="form-select" required>
+                <option value="" {% if not submitted_category %}selected{% endif %} disabled>Select category</option>
+                {% for cat in categories %}
+                  <option value="{{ cat }}" {% if submitted_category == cat %}selected{% endif %}>{{ cat }}</option>
+                {% endfor %}
+              </select>
+              {% if not categories %}
+                <div class="form-text text-danger">No categories found. Category is locked to existing categories.</div>
+              {% endif %}
             </div>
 
             <div class="mb-3">

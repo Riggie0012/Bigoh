@@ -128,6 +128,19 @@ BRAND_PARTNERS = [
     for p in os.getenv("BRAND_PARTNERS", "").split(",")
     if p.strip()
 ]
+DEFAULT_MANAGED_CATEGORIES = [
+    "Shoes",
+    "Ladies Watch",
+    "Men Watch",
+    "Jersey",
+    "Cleaning",
+    "Electricals",
+]
+MANAGED_CATEGORIES = [
+    name.strip()
+    for name in os.getenv("MANAGED_CATEGORIES", ",".join(DEFAULT_MANAGED_CATEGORIES)).split(",")
+    if name.strip()
+]
 
 app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
 
@@ -777,10 +790,6 @@ def slugify_category(name: str) -> str:
     slug = re.sub(r"[^a-z0-9]+", "-", (name or "").lower()).strip("-")
     return slug or "category"
 
-CATEGORY_LABEL_OVERRIDES = {
-    "waches": "Watches",
-}
-
 WATCH_CATEGORY_ALIASES = {
     "watch",
     "watches",
@@ -798,14 +807,34 @@ def normalize_category_label(name: str) -> str:
     cleaned = str(name or "").strip()
     if not cleaned:
         return ""
-    return CATEGORY_LABEL_OVERRIDES.get(cleaned.lower(), cleaned)
+    return cleaned
 
 
-def expand_watch_category_scope(category_name):
-    key = str(category_name or "").strip().lower()
-    if key in {"watch", "watches", "waches"}:
-        return sorted(WATCH_CATEGORY_ALIASES)
-    return [str(category_name or "").strip()]
+def get_managed_categories():
+    categories = []
+    seen = set()
+    for raw in MANAGED_CATEGORIES:
+        name = str(raw or "").strip()
+        if not name:
+            continue
+        key = name.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        categories.append(name)
+    return categories
+
+
+def coerce_allowed_category(raw_category: str, allowed_categories):
+    category = str(raw_category or "").strip()
+    if not category:
+        return ""
+    lookup = {
+        str(name).strip().lower(): str(name).strip()
+        for name in (allowed_categories or [])
+        if str(name).strip()
+    }
+    return lookup.get(category.lower(), "")
 
 
 def get_category_overview(conn=None, limit=None):
@@ -837,10 +866,13 @@ def get_category_overview(conn=None, limit=None):
                 params.append(int(limit))
             cur.execute(base_sql, params)
             rows = cur.fetchall() or []
+        allowed_keys = {name.lower() for name in get_managed_categories()}
         categories = []
         for row in rows:
             raw_name = str(_row_at(row, 0, "") or "").strip()
             if not raw_name:
+                continue
+            if allowed_keys and raw_name.lower() not in allowed_keys:
                 continue
             display_name = normalize_category_label(raw_name)
             categories.append(
@@ -4749,8 +4781,7 @@ def category_dynamic(slug):
         "availability": request.args.get("availability", "").strip(),
     }
     category_db_name = category.get("db_name") or category["name"]
-    category_scope = expand_watch_category_scope(category_db_name)
-    products, brands, colors = get_products_by_category(category_scope, filters)
+    products, brands, colors = get_products_by_category(category_db_name, filters)
     conn = get_db_connection()
     try:
         ratings = get_ratings_for_products(conn, [_row_at(row, 0) for row in products])
@@ -5360,10 +5391,11 @@ def pay_on_delivery():
 @app.route("/upload", methods=["GET", "POST"])
 @admin_required
 def upload():
-    categories_list = get_category_overview()
+    categories_list = get_managed_categories()
     if request.method == "POST":
         product_name = request.form.get("product_name", "").strip()
-        category = request.form.get("category", "").strip()
+        selected_category = request.form.get("category", "").strip()
+        category = coerce_allowed_category(selected_category, categories_list)
         brand = request.form.get("brand", "").strip()
         seller = request.form.get("seller", "").strip()
         color = request.form.get("color", "").strip()
@@ -5373,12 +5405,29 @@ def upload():
 
         file = request.files.get("image")
 
+        if not categories_list:
+            return render_template(
+                "upload.html",
+                error="No categories are available. Category is locked to existing categories only.",
+                categories=categories_list,
+                submitted_category=selected_category,
+            )
+
         # Basic validation
-        if not product_name or not category or not price:
+        if not product_name or not selected_category or not price:
             return render_template(
                 "upload.html",
                 error="Product name, category, and price are required.",
                 categories=categories_list,
+                submitted_category=selected_category,
+            )
+
+        if not category:
+            return render_template(
+                "upload.html",
+                error="Invalid category. Choose one of your existing categories.",
+                categories=categories_list,
+                submitted_category=selected_category,
             )
 
         if not file or file.filename == "":
@@ -5386,6 +5435,7 @@ def upload():
                 "upload.html",
                 error="Please choose an image.",
                 categories=categories_list,
+                submitted_category=selected_category,
             )
 
         if not allowed_file(file.filename):
@@ -5393,6 +5443,7 @@ def upload():
                 "upload.html",
                 error="Invalid image type. Use jpg, jpeg, png, or webp.",
                 categories=categories_list,
+                submitted_category=selected_category,
             )
 
         image_url = None
@@ -5457,9 +5508,10 @@ def upload():
             "upload.html",
             success="Product uploaded successfully.",
             categories=categories_list,
+            submitted_category="",
         )
 
-    return render_template("upload.html", categories=categories_list)
+    return render_template("upload.html", categories=categories_list, submitted_category="")
 
 
 @app.route("/order/confirmation/<int:order_id>")
@@ -6344,24 +6396,63 @@ def admin_products():
 @app.route("/admin/products/<int:product_id>/edit", methods=["GET", "POST"])
 @admin_required
 def admin_edit_product(product_id):
+    product = None
+    categories_list = []
+    category_warning = ""
+    product_seller = ""
+    product_color = ""
     conn = get_db_connection()
     try:
         has_seller = ensure_products_schema(conn)
+        categories_list = get_managed_categories()
         with conn.cursor() as cur:
             cur.execute("SELECT * FROM products WHERE product_id=%s", (product_id,))
             product = cur.fetchone()
             if not product:
                 return redirect(url_for("admin_products"))
+            product_seller = _row_at(product, 9, "") if has_seller else ""
+            product_color = _row_at(product, 10, "") if products_has_color(conn) else ""
+            existing_category = str(_row_at(product, 2, "") or "").strip()
+            if existing_category and not coerce_allowed_category(existing_category, categories_list):
+                category_warning = (
+                    f'Current category "{existing_category}" is not in the allowed list. '
+                    "Select a valid category and save."
+                )
 
             if request.method == "POST":
                 product_name = request.form.get("product_name", "").strip()
-                category = request.form.get("category", "").strip()
+                selected_category = request.form.get("category", "").strip()
+                category = coerce_allowed_category(selected_category, categories_list)
                 brand = request.form.get("brand", "").strip()
                 seller = request.form.get("seller", "").strip()
                 color = request.form.get("color", "").strip()
                 price = request.form.get("price", "").strip()
                 stock = request.form.get("stock", "0").strip()
                 description = request.form.get("description", "").strip()
+
+                if not categories_list:
+                    return render_template(
+                        "admin_product_edit.html",
+                        error="No categories are available. Category is locked to existing categories only.",
+                        product=product,
+                        product_seller=product_seller,
+                        product_color=product_color,
+                        products_has_seller=has_seller,
+                        category_warning=category_warning,
+                        categories=categories_list,
+                    )
+
+                if not category:
+                    return render_template(
+                        "admin_product_edit.html",
+                        error="Invalid category. Choose one of your existing categories.",
+                        product=product,
+                        product_seller=product_seller,
+                        product_color=product_color,
+                        products_has_seller=has_seller,
+                        category_warning=category_warning,
+                        categories=categories_list,
+                    )
 
                 image_url = product[7]
                 old_stock = int(_row_at(product, 5, 0) or 0)
@@ -6426,14 +6517,14 @@ def admin_edit_product(product_id):
     finally:
         conn.close()
 
-    product_seller = _row_at(product, 9, "") if has_seller else ""
-    product_color = _row_at(product, 10, "") if products_has_color() else ""
     return render_template(
         "admin_product_edit.html",
         product=product,
         product_seller=product_seller,
         product_color=product_color,
         products_has_seller=has_seller,
+        category_warning=category_warning,
+        categories=categories_list,
     )
 
 

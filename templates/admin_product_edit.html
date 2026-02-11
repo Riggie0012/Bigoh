@@ -164,6 +164,12 @@
       </div>
 
       <section class="panel">
+        {% if error %}
+          <div class="alert alert-danger">{{ error }}</div>
+        {% endif %}
+        {% if category_warning %}
+          <div class="alert alert-warning">{{ category_warning }}</div>
+        {% endif %}
         <form method="POST" enctype="multipart/form-data" class="row g-3">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <div class="col-md-6">
@@ -172,7 +178,11 @@
           </div>
           <div class="col-md-6">
             <label class="form-label">Category</label>
-            <input type="text" name="category" class="form-control" value="{{ product[2] }}" required>
+            <select name="category" class="form-select" required>
+              {% for cat in categories %}
+                <option value="{{ cat }}" {% if cat == product[2] %}selected{% endif %}>{{ cat }}</option>
+              {% endfor %}
+            </select>
           </div>
           <div class="col-md-6">
             <label class="form-label">Brand</label>
