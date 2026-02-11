@@ -780,12 +780,27 @@ CATEGORY_LABEL_OVERRIDES = {
     "waches": "Watches",
 }
 
+WATCH_CATEGORY_ALIASES = {
+    "watch",
+    "watches",
+    "waches",
+    "men watch",
+    "ladies watch",
+}
+
 
 def normalize_category_label(name: str) -> str:
     cleaned = str(name or "").strip()
     if not cleaned:
         return ""
     return CATEGORY_LABEL_OVERRIDES.get(cleaned.lower(), cleaned)
+
+
+def expand_watch_category_scope(category_name):
+    key = str(category_name or "").strip().lower()
+    if key in {"watch", "watches", "waches"}:
+        return sorted(WATCH_CATEGORY_ALIASES)
+    return [str(category_name or "").strip()]
 
 
 def get_category_overview(conn=None, limit=None):
@@ -4093,7 +4108,7 @@ def search_suggestions():
 
 
 def _tokenize_search(raw_query):
-    tokens = re.findall(r'"[^"]+"|\\S+', raw_query)
+    tokens = re.findall(r'"[^"]+"|\S+', raw_query)
     cleaned = []
     for tok in tokens:
         tok = tok.strip()
@@ -4109,8 +4124,9 @@ def _expand_synonyms(term: str) -> list:
     synonyms = {
         "jersey": ["kit", "football shirt", "soccer jersey"],
         "kit": ["jersey", "football shirt", "soccer jersey"],
-        "watch": ["wristwatch", "timepiece"],
-        "watches": ["watch", "wristwatch", "timepiece"],
+        "watch": ["watches", "wristwatch", "timepiece", "waches"],
+        "watches": ["watch", "wristwatch", "timepiece", "waches"],
+        "waches": ["watch", "watches", "wristwatch", "timepiece"],
         "ladies": ["women", "female"],
         "men": ["male", "gents"],
         "cleaning": ["cleaner", "cleaners", "detergent"],
@@ -4321,14 +4337,26 @@ def get_products_by_category(category_name, filters=None):
     try:
         ensure_products_schema(connection)
         ensure_products_visibility_column(connection)
+        if isinstance(category_name, (list, tuple, set)):
+            category_names = [str(name).strip() for name in category_name if str(name).strip()]
+        else:
+            category_names = [str(category_name).strip()] if str(category_name).strip() else []
+        if not category_names:
+            return [], [], []
+        category_keys = [name.lower() for name in category_names]
         brand = filters.get("brand", "")
         color = filters.get("color", "")
         min_price = _parse_price(filters.get("min_price"))
         max_price = _parse_price(filters.get("max_price"))
         availability = filters.get("availability", "")
 
-        where_parts = ["category = %s", "(is_hidden IS NULL OR is_hidden = 0)"]
-        params = [category_name]
+        if len(category_keys) == 1:
+            category_clause = "LOWER(category) = %s"
+        else:
+            placeholders = ", ".join(["%s"] * len(category_keys))
+            category_clause = f"LOWER(category) IN ({placeholders})"
+        where_parts = [category_clause, "(is_hidden IS NULL OR is_hidden = 0)"]
+        params = category_keys[:]
         if brand:
             where_parts.append("brand = %s")
             params.append(brand)
@@ -4357,10 +4385,10 @@ def get_products_by_category(category_name, filters=None):
                 """
                 SELECT DISTINCT brand
                 FROM products
-                WHERE category = %s AND brand IS NOT NULL AND brand <> ''
+                WHERE {category_clause} AND brand IS NOT NULL AND brand <> ''
                 ORDER BY brand
-                """,
-                (category_name,),
+                """.format(category_clause=category_clause),
+                category_keys,
             )
             brands = [row[0] for row in cursor.fetchall() or []]
 
@@ -4369,10 +4397,10 @@ def get_products_by_category(category_name, filters=None):
                     """
                     SELECT DISTINCT color
                     FROM products
-                    WHERE category = %s AND color IS NOT NULL AND color <> ''
+                    WHERE {category_clause} AND color IS NOT NULL AND color <> ''
                     ORDER BY color
-                    """,
-                    (category_name,),
+                    """.format(category_clause=category_clause),
+                    category_keys,
                 )
                 colors = [row[0] for row in cursor.fetchall() or []]
             else:
@@ -4554,7 +4582,8 @@ def category_dynamic(slug):
         "availability": request.args.get("availability", "").strip(),
     }
     category_db_name = category.get("db_name") or category["name"]
-    products, brands, colors = get_products_by_category(category_db_name, filters)
+    category_scope = expand_watch_category_scope(category_db_name)
+    products, brands, colors = get_products_by_category(category_scope, filters)
     conn = get_db_connection()
     try:
         ratings = get_ratings_for_products(conn, [_row_at(row, 0) for row in products])
