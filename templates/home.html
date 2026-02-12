@@ -1,7 +1,7 @@
 {% extends 'base.html' %}
 {% block title %}Home{% endblock %}
 {% block extra_head %}
-  <link rel="stylesheet" href="../static/files/css/lightslider.css">
+  <link rel="stylesheet" href="{{ url_for('static', filename='files/css/lightslider.css') }}">
   <style>
     .home-clean {
       background: #f8fafc;
@@ -315,6 +315,6 @@
   </div>
 {% endblock %}
 {% block extra_scripts %}
-  <script src="../static/files/js/jquery.js"></script>
-  <script src="../static/files/js/lightslider.js"></script>
+  <script src="{{ url_for('static', filename='files/js/jquery.js') }}"></script>
+  <script src="{{ url_for('static', filename='files/js/lightslider.js') }}"></script>
 {% endblock %}

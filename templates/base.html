@@ -8,9 +8,9 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Sora:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link href="../static/files/css/bootstrap.min.css" rel="stylesheet">
-  <link rel="stylesheet" href="../static/files/css/theme.css">
-  <link rel="stylesheet" href="../static/files/css/style.css">
+  <link href="{{ url_for('static', filename='files/css/bootstrap.min.css') }}" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='files/css/theme.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='files/css/style.css') }}">
   <meta name="csrf-token" content="{{ csrf_token() }}">
   <link
     rel="stylesheet"
@@ -91,9 +91,9 @@
     &#9650;
   </button>
 
-  <script src="../static/files/js/bootstrap.bundle.min.js"></script>
+  <script src="{{ url_for('static', filename='files/js/bootstrap.bundle.min.js') }}"></script>
   {% block extra_scripts %}{% endblock %}
-  <script src="../static/files/js/script.js"></script>
+  <script src="{{ url_for('static', filename='files/js/script.js') }}"></script>
   <script>
     (function () {
       const btn = document.getElementById("backToTop");
