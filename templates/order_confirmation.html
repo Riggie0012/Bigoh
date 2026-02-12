@@ -249,7 +249,7 @@
         <div class="invoice-total-box">
           {% if discount and discount > 0 %}
           <div class="invoice-total-row">
-            <div>Discount</div>
+            <div>Coupon Discount</div>
             <strong>-KES {{ "{:,.2f}".format(discount or 0) }}</strong>
           </div>
           {% endif %}
@@ -356,7 +356,7 @@
 
           {% if discount and discount > 0 %}
           <div class="d-flex justify-content-between align-items-center mt-3">
-            <strong>Discount</strong>
+            <strong>Coupon Discount</strong>
             <strong class="text-success">-KES {{ "{:,.2f}".format(discount or 0) }}</strong>
           </div>
           {% if discount_reason %}
@@ -379,7 +379,8 @@
 
     <div class="mt-4">
       <a class="btn btn-dark" href="{{ url_for('order_confirmation', order_id=order[0]) }}?print=1">Download / Print order details</a>
-      <div class="text-muted small mt-2">Final receipt will be sent by admin after confirmation.</div>
+      <a class="btn btn-outline-dark ms-2" href="{{ url_for('my_orders') }}">My Orders</a>
+      <div class="text-muted small mt-2">Final paid receipt will be sent by admin after delivery and payment confirmation.</div>
       {% if session.get("is_admin") %}
       <div class="mt-2">
         <a class="btn btn-outline-dark" href="{{ url_for('order_receipt', order_id=order[0]) }}">View final receipt (admin)</a>

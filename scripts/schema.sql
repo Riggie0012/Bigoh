@@ -6,10 +6,12 @@ CREATE TABLE IF NOT EXISTS users (
     password VARCHAR(255) NOT NULL,
     email VARCHAR(120) NOT NULL,
     phone VARCHAR(30) NOT NULL,
+    referral_code VARCHAR(24) NULL,
     is_admin TINYINT(1) NOT NULL DEFAULT 0,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     UNIQUE KEY uniq_users_username (username),
-    UNIQUE KEY uniq_users_email (email)
+    UNIQUE KEY uniq_users_email (email),
+    UNIQUE KEY uniq_users_referral_code (referral_code)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS products (
@@ -35,6 +37,36 @@ CREATE TABLE IF NOT EXISTS orders (
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     KEY idx_orders_user_id (user_id),
     KEY idx_orders_status (status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS user_referrals (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    referrer_user_id INT NOT NULL,
+    referred_user_id INT NOT NULL,
+    referral_code VARCHAR(24) NOT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uniq_referred_user (referred_user_id),
+    UNIQUE KEY uniq_referral_pair (referrer_user_id, referred_user_id),
+    KEY idx_referrer_user_id (referrer_user_id),
+    KEY idx_referral_code (referral_code)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS user_coupons (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id INT NOT NULL,
+    coupon_code VARCHAR(40) NOT NULL,
+    amount DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+    reason VARCHAR(160) NOT NULL,
+    status VARCHAR(20) NOT NULL DEFAULT 'ACTIVE',
+    source_user_id INT NULL,
+    issued_for_user_id INT NULL,
+    used_order_id INT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    used_at DATETIME NULL,
+    expires_at DATETIME NULL,
+    UNIQUE KEY uniq_coupon_code (coupon_code),
+    KEY idx_coupon_user_status (user_id, status, expires_at),
+    KEY idx_coupon_used_order (used_order_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS order_items (

@@ -1,0 +1,781 @@
+{% extends 'base.html' %}
+{% block title %}My Orders{% endblock %}
+{% block extra_head %}
+<style>
+  .orders-page {
+    background: #f3f4f6;
+  }
+  .orders-card {
+    background: #fff;
+    border: 1px solid #dbe2ea;
+    border-radius: 6px;
+    box-shadow: none;
+  }
+  .crumb {
+    font-size: 1.2rem;
+    color: #111827;
+    font-weight: 700;
+  }
+  .crumb a {
+    text-decoration: none;
+    color: #0f172a;
+    font-weight: 700;
+  }
+  .crumb-sep {
+    color: #6b7280;
+    margin: 0 8px;
+  }
+  .avatar-badge {
+    width: 132px;
+    height: 132px;
+    border-radius: 50%;
+    background: #cfd4db;
+    color: #fff;
+    display: grid;
+    place-items: center;
+    font-size: 1.8rem;
+    font-weight: 700;
+    margin: 4px auto 10px;
+    box-shadow: inset 0 0 0 5px #eef2f7;
+  }
+  .profile-email {
+    text-align: center;
+    font-size: 1.05rem;
+    font-weight: 700;
+    margin-bottom: 10px;
+    word-break: break-word;
+    color: #111827;
+  }
+  .account-group-title {
+    margin-top: 6px;
+    margin-bottom: 4px;
+    color: #111827;
+    font-size: 1.1rem;
+    font-weight: 700;
+  }
+  .account-link {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 0;
+    border-radius: 10px;
+    text-decoration: none;
+    color: #0f172a;
+    font-weight: 700;
+    font-size: 1rem;
+    border-bottom: 1px solid transparent;
+  }
+  .account-link:hover,
+  .account-link.active {
+    color: #dc2626;
+  }
+  .account-arrow {
+    font-size: 0.95rem;
+    color: #1f2937;
+  }
+  .status-tabs {
+    display: grid;
+    grid-template-columns: repeat(6, minmax(120px, 1fr));
+    gap: 0;
+    margin-bottom: 12px;
+    border-bottom: 1px solid #e5e7eb;
+  }
+  .status-chip {
+    text-decoration: none;
+    color: #374151;
+    background: transparent;
+    border: none;
+    border-radius: 0;
+    padding: 12px 10px;
+    font-weight: 500;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    position: relative;
+    font-size: 1rem;
+    white-space: nowrap;
+  }
+  .status-chip:hover,
+  .status-chip.active {
+    background: transparent;
+    color: #111827;
+  }
+  .status-chip.active {
+    font-weight: 700;
+  }
+  .status-chip.active::after {
+    content: "";
+    position: absolute;
+    left: 28%;
+    right: 28%;
+    bottom: -1px;
+    height: 3px;
+    border-radius: 99px;
+    background: #ef4444;
+  }
+  .status-count {
+    min-width: 18px;
+    height: 18px;
+    border-radius: 999px;
+    background: #e11d48;
+    color: #fff;
+    font-size: 0.68rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 5px;
+    font-weight: 700;
+  }
+  .orders-head-grid {
+    display: grid;
+    grid-template-columns: 46% 18% 18% 18%;
+    color: #9ca3af;
+    font-weight: 700;
+    font-size: 1rem;
+    padding: 4px 10px 12px;
+    border-bottom: 1px solid #eceff3;
+    margin-bottom: 8px;
+    text-transform: none;
+  }
+  .order-row {
+    border: 1px solid #d9dfe7;
+    border-radius: 0;
+    padding: 0;
+    margin-bottom: 12px;
+    background: #fff;
+    overflow: hidden;
+  }
+  .order-row:last-child {
+    margin-bottom: 0;
+  }
+  .order-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 10px 14px;
+    border-bottom: 1px solid #eceff3;
+    margin: 0;
+  }
+  .order-id {
+    font-size: 1rem;
+    font-weight: 500;
+    color: #334155;
+  }
+  .order-copy {
+    border: 1px solid #f87171;
+    color: #ef4444;
+    background: #fff;
+    border-radius: 8px;
+    padding: 1px 10px;
+    font-size: 0.85rem;
+    line-height: 1.4;
+  }
+  .order-copy:hover {
+    background: #fef2f2;
+  }
+  .order-time {
+    color: #9ca3af;
+    font-size: 0.9rem;
+  }
+  .order-detail-link {
+    color: #2563eb;
+    text-decoration: none;
+    font-weight: 500;
+    font-size: 0.95rem;
+  }
+  .order-body {
+    padding: 14px 14px 16px;
+  }
+  .product-thumb {
+    width: 108px;
+    height: 108px;
+    border-radius: 0;
+    object-fit: cover;
+    border: 1px solid #e2e8f0;
+    background: #fff;
+  }
+  .product-name {
+    font-weight: 500;
+    color: #111827;
+    line-height: 1.3;
+    margin-bottom: 2px;
+    font-size: 1rem;
+  }
+  .product-meta {
+    color: #6b7280;
+    font-size: 0.86rem;
+  }
+  .status-pill {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 999px;
+    padding: 4px 12px;
+    font-size: 0.82rem;
+    font-weight: 700;
+    border: 1px solid transparent;
+  }
+  .status-pending { background: #fff7ed; border-color: #fed7aa; color: #c2410c; }
+  .status-processing { background: #eff6ff; border-color: #bfdbfe; color: #1d4ed8; }
+  .status-delivered { background: #ecfdf5; border-color: #bbf7d0; color: #15803d; }
+  .status-completed { background: #ecfeff; border-color: #a5f3fc; color: #0f766e; }
+  .status-cancelled { background: #fef2f2; border-color: #fecaca; color: #b91c1c; }
+  .status-note {
+    margin-top: 6px;
+    font-size: 0.78rem;
+    line-height: 1.25;
+    color: #9a3412;
+  }
+  .status-note-paid {
+    color: #0f766e;
+  }
+  .meta-label {
+    color: #64748b;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-bottom: 3px;
+  }
+  .amount-text {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: #111827;
+  }
+  .track-btn {
+    border: 1px solid #22c55e;
+    color: #16a34a;
+    background: #f0fdf4;
+    font-weight: 600;
+    border-radius: 6px;
+    padding: 7px 12px;
+    font-size: 0.9rem;
+  }
+  .track-btn:hover {
+    background: #dcfce7;
+    color: #15803d;
+  }
+  .receipt-btn {
+    border-radius: 6px;
+    padding: 7px 12px;
+    font-size: 0.9rem;
+  }
+  .receipt-pending {
+    border-radius: 6px;
+    padding: 7px 12px;
+    font-size: 0.9rem;
+  }
+  .orders-empty h5 {
+    font-size: 1.35rem;
+    font-weight: 700;
+  }
+  .orders-empty p {
+    font-size: 0.95rem;
+  }
+  .orders-empty .btn {
+    font-size: 0.95rem;
+  }
+  .track-modal .modal-content {
+    border-radius: 14px;
+    border: 1px solid #dbe2ea;
+    overflow: hidden;
+  }
+  .track-modal .modal-dialog {
+    max-width: 630px;
+  }
+  .track-modal .modal-header {
+    border-bottom: 1px solid #eceff3;
+    background: #fff;
+    justify-content: center;
+    padding: 12px 16px;
+  }
+  .track-modal .modal-title {
+    font-size: 1.45rem;
+    font-weight: 700;
+    text-align: center;
+    width: 100%;
+  }
+  .track-modal .btn-close {
+    position: absolute;
+    right: 14px;
+  }
+  .track-head {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 3px;
+    font-size: 1rem;
+    color: #374151;
+    margin-bottom: 6px;
+  }
+  .track-head strong {
+    color: #6b7280;
+    font-weight: 500;
+  }
+  .track-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 700;
+    margin-top: 2px;
+  }
+  .track-head .status-pill {
+    font-size: 0.78rem;
+  }
+  .track-steps {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 2px;
+    margin-top: 10px;
+    margin-bottom: 2px;
+    position: relative;
+  }
+  .track-steps::before {
+    content: "";
+    position: absolute;
+    left: 12%;
+    right: 12%;
+    top: 24px;
+    border-top: 2px dashed #d1d5db;
+    z-index: 1;
+  }
+  .track-step {
+    position: relative;
+    z-index: 2;
+    text-align: center;
+  }
+  .track-step-dot {
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 2px solid #cbd5e1;
+    color: #94a3b8;
+    background: #fff;
+    margin-bottom: 7px;
+    font-size: 1.15rem;
+  }
+  .track-step-label {
+    font-size: 0.88rem;
+    font-weight: 600;
+    color: #64748b;
+  }
+  .track-step.done .track-step-dot,
+  .track-step.current .track-step-dot {
+    border-color: #16a34a;
+    background: #16a34a;
+    color: #fff;
+  }
+  .track-step.done .track-step-label,
+  .track-step.current .track-step-label {
+    color: #111827;
+  }
+  .track-rollup {
+    text-align: center;
+    color: #2563eb;
+    font-size: 0.78rem;
+    margin-bottom: 10px;
+    margin-top: 4px;
+  }
+  .track-events {
+    max-height: 420px;
+    overflow-y: auto;
+    border-top: 1px solid #eceff3;
+    margin-top: 8px;
+    padding-top: 10px;
+    padding-right: 6px;
+  }
+  .track-event {
+    display: grid;
+    grid-template-columns: 28px 1fr;
+    gap: 10px;
+    margin-bottom: 16px;
+  }
+  .track-event:last-child {
+    margin-bottom: 4px;
+  }
+  .track-marker {
+    position: relative;
+    width: 26px;
+  }
+  .track-marker::before {
+    content: "";
+    position: absolute;
+    left: 13px;
+    top: 0;
+    bottom: -20px;
+    border-left: 2px solid #e2e8f0;
+  }
+  .track-event:last-child .track-marker::before {
+    display: none;
+  }
+  .track-dot {
+    width: 13px;
+    height: 13px;
+    border-radius: 50%;
+    background: #cbd5e1;
+    margin-top: 4px;
+    margin-left: 7px;
+  }
+  .track-event.highlight .track-dot {
+    background: #16a34a;
+  }
+  .track-title {
+    font-weight: 700;
+    line-height: 1.2;
+    margin-bottom: 2px;
+    font-size: 1.03rem;
+    color: #111827;
+  }
+  .track-desc {
+    color: #334155;
+    font-size: 0.95rem;
+    line-height: 1.3;
+  }
+  .track-meta {
+    color: #64748b;
+    font-size: 0.84rem;
+    margin-top: 2px;
+  }
+  .track-loading {
+    padding: 42px 0;
+    text-align: center;
+    color: #64748b;
+    font-size: 0.95rem;
+  }
+  @media (max-width: 991px) {
+    .crumb {
+      font-size: 1.1rem;
+      margin-bottom: 8px !important;
+    }
+    .orders-card {
+      border-radius: 8px;
+    }
+    .status-tabs {
+      display: flex;
+      overflow-x: auto;
+      white-space: nowrap;
+      -webkit-overflow-scrolling: touch;
+      scrollbar-width: none;
+    }
+    .status-tabs::-webkit-scrollbar {
+      display: none;
+    }
+    .status-chip {
+      flex: 0 0 auto;
+      font-size: 0.95rem;
+      padding: 10px 12px;
+    }
+    .orders-head-grid {
+      display: none;
+    }
+    .order-top {
+      flex-direction: row;
+      align-items: flex-start;
+      flex-wrap: wrap;
+      gap: 6px;
+      padding: 10px 12px;
+    }
+    .order-id,
+    .order-time,
+    .order-copy,
+    .order-detail-link,
+    .product-name,
+    .product-meta,
+    .meta-label,
+    .amount-text,
+    .status-pill,
+    .track-btn,
+    .receipt-btn,
+    .receipt-pending,
+    .status-note,
+    .track-head,
+    .track-step-label,
+    .track-rollup,
+    .track-title,
+    .track-desc,
+    .track-meta,
+    .track-loading {
+      font-size: 0.92rem;
+    }
+    .order-body {
+      padding: 12px;
+    }
+    .product-thumb {
+      width: 92px;
+      height: 92px;
+    }
+    .track-steps {
+      grid-template-columns: repeat(2, 1fr);
+      gap: 12px 4px;
+    }
+    .track-steps::before {
+      display: none;
+    }
+    .track-modal .modal-dialog {
+      margin: 0.5rem;
+      max-width: none;
+    }
+    .track-modal .modal-title {
+      font-size: 1.25rem;
+    }
+  }
+</style>
+{% endblock %}
+{% block content %}
+<div class="orders-page py-4">
+  <div class="container">
+    <div class="crumb mb-3"><a href="/">Home</a><span class="crumb-sep">&rsaquo;</span>My Orders</div>
+    <div class="row g-3">
+      <div class="col-lg-3">
+        <div class="orders-card p-3">
+          <div class="avatar-badge">{{ (session.get("key") or "U")[0]|upper }}</div>
+          <div class="profile-email">{{ session.get("user_email") or session.get("key") or "Signed in" }}</div>
+          <hr>
+          <div class="account-group-title">My Account</div>
+          <a class="account-link active" href="{{ url_for('my_orders') }}">My Orders <span class="account-arrow">&rsaquo;</span></a>
+          <a class="account-link" href="{{ url_for('my_referrals') }}">My Referrals <span class="account-arrow">&rsaquo;</span></a>
+          <a class="account-link" href="{{ url_for('cart') }}">Cart <span class="account-arrow">&rsaquo;</span></a>
+          <a class="account-link" href="{{ url_for('returns_refunds') }}">Return/Refund <span class="account-arrow">&rsaquo;</span></a>
+        </div>
+      </div>
+
+      <div class="col-lg-9">
+        <div class="orders-card p-3 p-md-4">
+          <div class="status-tabs">
+            {% for code, label in status_tabs %}
+            {% set count = status_counts.get(code, 0) %}
+            <a
+              class="status-chip {% if status_filter == code %}active{% endif %}"
+              href="{{ url_for('my_orders') if code == 'ALL' else url_for('my_orders', status=code) }}"
+            >
+              {{ label }}
+              {% if count > 0 %}
+              <span class="status-count">{{ count }}</span>
+              {% endif %}
+            </a>
+            {% endfor %}
+          </div>
+          <div class="orders-head-grid">
+            <div>Product info</div>
+            <div>Order Amount</div>
+            <div>Order Status</div>
+            <div>Options</div>
+          </div>
+
+          {% if orders and orders|length > 0 %}
+            {% for order in orders %}
+            <div class="order-row">
+              <div class="order-top">
+                <div class="d-flex flex-wrap align-items-center gap-2">
+                  <div class="order-id">Order No. {{ order.reference }}</div>
+                  <button type="button" class="order-copy js-copy-order" data-copy="{{ order.reference }}">Copy</button>
+                </div>
+                <div class="order-time">
+                  Order Time:
+                    {% if order.created_at %}
+                      {{ order.created_at.strftime("%Y-%m-%d %H:%M") }}
+                    {% else %}
+                      -
+                    {% endif %}
+                </div>
+                <a class="order-detail-link" href="{{ url_for('order_confirmation', order_id=order.order_id) }}">Order Detail</a>
+              </div>
+
+              <div class="row g-3 align-items-center order-body">
+                <div class="col-md-5 d-flex gap-3">
+                  <img src="{{ image_url(order.image_path) }}" alt="{{ order.first_item_name }}" class="product-thumb">
+                  <div>
+                    <div class="product-name">{{ order.first_item_name }}</div>
+                    <div class="product-meta">
+                      Qty {{ order.first_item_qty }}{% if order.extra_lines > 0 %} | +{{ order.extra_lines }} more item(s){% endif %}
+                    </div>
+                    <div class="product-meta">{{ order.location }}</div>
+                  </div>
+                </div>
+
+                <div class="col-6 col-md-2">
+                  <div class="meta-label">Order Amount</div>
+                  <div class="amount-text">KSh {{ "{:,.2f}".format(order.amount or 0) }}</div>
+                </div>
+
+                <div class="col-6 col-md-2">
+                  <div class="meta-label">Order Status</div>
+                  <span class="status-pill status-{{ order.status|lower }}">{{ order.status.title() }}</span>
+                  {% if order.status == "DELIVERED" %}
+                  <div class="status-note">Payment pending. Pay after delivery.</div>
+                  {% elif order.status == "COMPLETED" %}
+                  <div class="status-note status-note-paid">Payment confirmed.</div>
+                  {% endif %}
+                </div>
+
+                <div class="col-12 col-md-3 d-grid gap-2">
+                  <button type="button" class="track-btn js-track-order" data-order-id="{{ order.order_id }}">
+                    Track Order
+                  </button>
+                  {% if order.status == "COMPLETED" %}
+                  <a class="btn btn-outline-dark receipt-btn" href="{{ url_for('order_receipt', order_id=order.order_id) }}">View Receipt</a>
+                  {% elif order.status == "DELIVERED" %}
+                  <a class="btn btn-outline-dark receipt-btn" href="{{ url_for('order_receipt', order_id=order.order_id) }}">View Invoice</a>
+                  {% else %}
+                  <button type="button" class="btn btn-light receipt-pending" disabled>Receipt Pending</button>
+                  {% endif %}
+                </div>
+              </div>
+            </div>
+            {% endfor %}
+          {% else %}
+            <div class="text-center py-5 orders-empty">
+              <h5 class="mb-2">No orders found</h5>
+              <p class="text-muted mb-3">Orders you place will appear here.</p>
+              <a href="/" class="btn btn-dark">Continue Shopping</a>
+            </div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade track-modal" id="trackOrderModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Order Track</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body" id="trackOrderBody">
+        <div class="track-loading">Loading tracking details...</div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block extra_scripts %}
+<script>
+  (function () {
+    var modalEl = document.getElementById("trackOrderModal");
+    var bodyEl = document.getElementById("trackOrderBody");
+    if (!modalEl || !bodyEl || !window.bootstrap) return;
+    var modal = new bootstrap.Modal(modalEl);
+
+    function esc(value) {
+      var map = {"&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;"};
+      return String(value == null ? "" : value).replace(/[&<>\"']/g, function (m) { return map[m]; });
+    }
+
+    function statusClass(status) {
+      var key = String(status || "").toUpperCase();
+      if (key === "PENDING") return "status-pending";
+      if (key === "PROCESSING") return "status-processing";
+      if (key === "DELIVERED") return "status-delivered";
+      if (key === "COMPLETED") return "status-completed";
+      if (key === "CANCELLED") return "status-cancelled";
+      return "status-pending";
+    }
+
+    function renderTracking(data) {
+      var stepsHtml = (data.steps || []).map(function (s) {
+        var cls = ["track-step"];
+        if (s.done) cls.push("done");
+        if (s.current) cls.push("current");
+        return (
+          '<div class="' + cls.join(" ") + '">' +
+            '<div class="track-step-dot"><i class="' + esc(s.icon || "fa-regular fa-circle") + '"></i></div>' +
+            '<div class="track-step-label">' + esc(s.label || "") + '</div>' +
+          '</div>'
+        );
+      }).join("");
+
+      var eventsHtml = (data.events || []).map(function (e) {
+        return (
+          '<div class="track-event ' + (e.highlight ? "highlight" : "") + '">' +
+            '<div class="track-marker"><div class="track-dot"></div></div>' +
+            '<div>' +
+              '<div class="track-title">' + esc(e.title || "") + '</div>' +
+              '<div class="track-desc">' + esc(e.description || "") + '</div>' +
+              '<div class="track-meta">' + esc(e.time || "") +
+                (e.location ? " \u2022 " + esc(e.location) : "") + '</div>' +
+            '</div>' +
+          '</div>'
+        );
+      }).join("");
+
+      bodyEl.innerHTML =
+        '<div class="track-head">' +
+          '<div><strong>Order No.:</strong> ' + esc(data.order_reference || data.order_id || "") + '</div>' +
+          '<div><strong>Tracking Number:</strong> ' + esc(data.tracking_number || "") + '</div>' +
+          '<div class="track-status"><span class="status-pill ' + statusClass(data.status) + '">' +
+            esc(data.status_label || data.status || "Pending") + '</span></div>' +
+        '</div>' +
+        '<div class="track-steps">' + stepsHtml + '</div>' +
+        '<div class="track-rollup">Roll Up <i class="fa-solid fa-angle-up"></i></div>' +
+        '<div class="track-events">' + (eventsHtml || '<div class="text-muted">No tracking events yet.</div>') + '</div>';
+    }
+
+    function renderError(message) {
+      bodyEl.innerHTML =
+        '<div class="track-loading">' +
+          '<div class="text-danger fw-semibold mb-1">Unable to load tracking</div>' +
+          '<div>' + esc(message || "Please try again.") + '</div>' +
+        '</div>';
+    }
+
+    function loadTracking(orderId) {
+      bodyEl.innerHTML = '<div class="track-loading">Loading tracking details...</div>';
+      modal.show();
+      fetch("/order/" + encodeURIComponent(orderId) + "/tracking", {
+        headers: {"Accept": "application/json"}
+      })
+        .then(function (res) { return res.json().then(function (data) { return {ok: res.ok, data: data}; }); })
+        .then(function (result) {
+          if (!result.ok || !result.data || !result.data.ok) {
+            renderError((result.data && result.data.message) || "Tracking is unavailable.");
+            return;
+          }
+          renderTracking(result.data);
+        })
+        .catch(function () {
+          renderError("Network error while loading tracking.");
+        });
+    }
+
+    document.querySelectorAll(".js-track-order").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var orderId = this.getAttribute("data-order-id");
+        if (!orderId) return;
+        loadTracking(orderId);
+      });
+    });
+
+    document.querySelectorAll(".js-copy-order").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var value = this.getAttribute("data-copy") || "";
+        if (!value) return;
+        var done = function () {
+          btn.textContent = "Copied";
+          setTimeout(function () { btn.textContent = "Copy"; }, 1200);
+        };
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(value).then(done).catch(function () {});
+          return;
+        }
+        var ta = document.createElement("textarea");
+        ta.value = value;
+        ta.style.position = "fixed";
+        ta.style.left = "-9999px";
+        document.body.appendChild(ta);
+        ta.focus();
+        ta.select();
+        try {
+          document.execCommand("copy");
+          done();
+        } catch (e) {}
+        document.body.removeChild(ta);
+      });
+    });
+  })();
+</script>
+{% endblock %}

@@ -139,6 +139,7 @@
                      {% if success %}<div class="alert alert-success">{{ success }}</div>{% endif %}
                      {% if error %}<div class="alert alert-danger">{{ error }}</div>{% endif %}
 
+                     {% set signup_ref = request.form.get('referral_code') or prefill_referral or request.args.get('ref', '') %}
                      <form action="/signup" method="post">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                          <input type="hidden" name="next" value="{{ next_url or '' }}">
@@ -170,6 +171,13 @@
                              {% if error_field == 'phone' %}
                              <div class="invalid-feedback d-block">Please enter a valid phone number.</div>
                              {% endif %}
+                         </div>
+
+                         <div class="mb-2">
+                             <input type="text" name="referral_code" placeholder="Referral code (optional)"
+                             value="{{ signup_ref }}"
+                             class="form-control">
+                             <div class="form-text">Every successful signup gets 5 coupons. Enter a referral code so your referrer also gets 5 coupons.</div>
                          </div>
 
                          <div class="mb-2">
@@ -224,7 +232,7 @@
                      <div class="text-center my-3 text-muted small">Or sign up with</div>
                      <div class="row g-2">
                        <div class="col-12">
-                         <a class="btn btn-outline-dark w-100" href="/login/google?intent=signup&remember=1">
+                         <a class="btn btn-outline-dark w-100" href="/login/google?intent=signup&remember=1{% if signup_ref %}&ref={{ signup_ref|urlencode }}{% endif %}">
                            <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google" style="width:18px; height:18px; margin-right:8px; vertical-align:-3px;">
                            Google
                          </a>

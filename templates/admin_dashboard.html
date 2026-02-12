@@ -488,12 +488,20 @@
               <span class="mono">{{ metrics.pending }}</span>
             </div>
             <div class="mini-row">
-              <span>Completed Orders</span>
-              <span class="mono">{{ metrics.completed }}</span>
+              <span>Processing Orders</span>
+              <span class="mono">{{ metrics.processing }}</span>
             </div>
             <div class="mini-row">
               <span>Delivered Orders</span>
               <span class="mono">{{ metrics.delivered }}</span>
+            </div>
+            <div class="mini-row">
+              <span>Completed Orders</span>
+              <span class="mono">{{ metrics.completed }}</span>
+            </div>
+            <div class="mini-row">
+              <span>Cancelled Orders</span>
+              <span class="mono">{{ metrics.cancelled }}</span>
             </div>
           </div>
         </div>
@@ -572,7 +580,7 @@
                     <form method="POST" action="{{ url_for('admin_update_order_status', order_id=o[0]) }}" class="d-flex gap-2 js-status-form">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                       <select name="status" class="form-select form-select-sm bg-dark text-white border-0 js-status-select">
-                        {% for s in ["PENDING", "PROCESSING", "COMPLETED", "DELIVERED", "CANCELLED"] %}
+                        {% for s in ["PENDING", "PROCESSING", "DELIVERED", "COMPLETED", "CANCELLED"] %}
                           <option value="{{ s }}" {% if o[6] == s %}selected{% endif %}>{{ s }}</option>
                         {% endfor %}
                       </select>
@@ -596,7 +604,7 @@
                     <form method="POST" action="{{ url_for('admin_update_order_status', order_id=o[0]) }}" class="d-flex gap-2 js-status-form">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                       <select name="status" class="form-select form-select-sm bg-dark text-white border-0 js-status-select">
-                        {% for s in ["PENDING", "PROCESSING", "COMPLETED", "DELIVERED", "CANCELLED"] %}
+                        {% for s in ["PENDING", "PROCESSING", "DELIVERED", "COMPLETED", "CANCELLED"] %}
                           <option value="{{ s }}" {% if o[5] == s %}selected{% endif %}>{{ s }}</option>
                         {% endfor %}
                       </select>
@@ -639,7 +647,7 @@
           labels: statusLabels,
           datasets: [{
             data: statusValues,
-            backgroundColor: ["#f4b740", "#4f8cff", "#3ddc97", "#22c55e", "#f87171"],
+            backgroundColor: ["#f4b740", "#4f8cff", "#22c55e", "#3ddc97", "#f87171"],
             borderWidth: 0
           }]
         },

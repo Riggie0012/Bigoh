@@ -221,7 +221,7 @@
                     <form method="POST" action="{{ url_for('admin_update_order_status', order_id=o[0]) }}" class="d-flex gap-2">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                       <select name="status" class="form-select form-select-sm admin-select">
-                        {% for s in ["PENDING", "PROCESSING", "COMPLETED", "DELIVERED", "CANCELLED"] %}
+                        {% for s in ["PENDING", "PROCESSING", "DELIVERED", "COMPLETED", "CANCELLED"] %}
                           <option value="{{ s }}" {% if o[6] == s %}selected{% endif %}>{{ s }}</option>
                         {% endfor %}
                       </select>
@@ -244,7 +244,7 @@
                     <form method="POST" action="{{ url_for('admin_update_order_status', order_id=o[0]) }}" class="d-flex gap-2">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                       <select name="status" class="form-select form-select-sm admin-select">
-                        {% for s in ["PENDING", "PROCESSING", "COMPLETED", "DELIVERED", "CANCELLED"] %}
+                        {% for s in ["PENDING", "PROCESSING", "DELIVERED", "COMPLETED", "CANCELLED"] %}
                           <option value="{{ s }}" {% if o[5] == s %}selected{% endif %}>{{ s }}</option>
                         {% endfor %}
                       </select>

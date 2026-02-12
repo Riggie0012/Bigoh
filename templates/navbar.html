@@ -182,6 +182,100 @@
         text-transform: uppercase;
         letter-spacing: 1px;
       }
+      .zen-account .dropdown-toggle::after {
+        margin-left: 6px;
+        border-top-width: 0.3em;
+      }
+      .zen-account-toggle {
+        border: none;
+        background: transparent;
+        border-radius: 0;
+        padding: 0 2px;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        min-width: 0;
+        max-width: 330px;
+      }
+      .zen-account-toggle:focus {
+        box-shadow: none;
+      }
+      .zen-account-icon {
+        width: 34px;
+        height: 34px;
+        border-radius: 50%;
+        background: transparent;
+        color: #374151;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 25px;
+      }
+      .zen-account-text {
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+        line-height: 1;
+      }
+      .zen-account-name {
+        font-weight: 500;
+        color: #dc2626;
+        font-size: 1.05rem;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        max-width: 260px;
+      }
+      .zen-account-sub {
+        font-size: 10px;
+        color: #64748b;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        display: none;
+      }
+      .zen-account-menu {
+        border: 1px solid #e2e8f0;
+        border-radius: 12px;
+        box-shadow: 0 20px 45px rgba(15, 23, 42, 0.16);
+        min-width: 295px;
+        padding: 8px 8px 10px;
+      }
+      .zen-account-head {
+        padding: 6px 8px 10px;
+      }
+      .zen-account-menu .dropdown-item {
+        border-radius: 10px;
+        font-weight: 500;
+        padding: 10px 12px;
+        color: #0f172a;
+        font-size: 1.05rem;
+        display: flex;
+        align-items: center;
+      }
+      .zen-account-menu .dropdown-item i {
+        width: 20px;
+        margin-right: 10px;
+        color: #475569;
+        font-size: 1rem;
+      }
+      .zen-account-menu .dropdown-item:hover {
+        background: #f8fafc;
+        color: #111827;
+      }
+      .zen-account-menu .dropdown-item:hover i {
+        color: #111827;
+      }
+      .zen-account-menu .logout-item {
+        color: #fff !important;
+        background: linear-gradient(180deg, #f97316 0%, #ef4444 100%);
+        font-weight: 700;
+        justify-content: center;
+        margin-top: 8px;
+      }
+      .zen-account-menu .logout-item i {
+        color: #fff !important;
+      }
 
       .cat-trigger {
         background: #e53935;
@@ -344,8 +438,30 @@
         .category-mega { width: 100%; }
         .category-mega .mega-wrap { flex-direction: column; }
         .category-sidebar { min-width: 100%; }
-        .zen-actions { margin-top: 12px; }
+        .zen-actions {
+          margin-top: 12px;
+          width: 100%;
+          justify-content: space-between;
+          align-items: center;
+          gap: 10px;
+          flex-wrap: nowrap;
+        }
         .navbar-collapse { padding-top: 10px; }
+        .zen-account {
+          margin-left: auto;
+          position: relative;
+        }
+        .zen-account-toggle {
+          min-width: 0;
+          width: auto;
+          max-width: 72vw;
+        }
+        .zen-account-menu {
+          width: min(92vw, 320px);
+          min-width: 0;
+          right: 0;
+          left: auto;
+        }
       }
 
       .signin-modal .modal-content {
@@ -566,8 +682,40 @@
 
               <div>
                 {% if session['key'] %}
-                  <div class="zen-user">Logged in: {{ session['key'] }}</div>
-                  <a class="zen-link" href="/logout">Logout</a>
+                  <div class="dropdown zen-account">
+                    <button class="btn zen-account-toggle dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+                      <span class="zen-account-icon"><i class="fa-regular fa-user"></i></span>
+                      <span class="zen-account-text">
+                        <span class="zen-account-name">{{ session.get("user_email") or session.get("key") }}</span>
+                        <span class="zen-account-sub">
+                          {% if session.get("referral_code") %}
+                            Ref: {{ session.get("referral_code") }}
+                          {% else %}
+                            Account
+                          {% endif %}
+                        </span>
+                      </span>
+                    </button>
+                    <ul class="dropdown-menu dropdown-menu-end zen-account-menu">
+                      <li class="zen-account-head">
+                        <div class="fw-semibold">{{ session.get("key") }}</div>
+                        <div class="small text-muted">{{ session.get("user_email") or "Signed in" }}</div>
+                      </li>
+                      <li><a class="dropdown-item" href="/my-orders"><i class="fa-regular fa-rectangle-list"></i>My Orders</a></li>
+                      <li><a class="dropdown-item" href="/returns"><i class="fa-solid fa-hand-holding-dollar"></i>After Sale</a></li>
+                      <li><a class="dropdown-item" href="/shipping"><i class="fa-solid fa-location-dot"></i>Address Book</a></li>
+                      <li><a class="dropdown-item" href="/categories"><i class="fa-regular fa-heart"></i>Favorites</a></li>
+                      <li><a class="dropdown-item" href="/my-referrals"><i class="fa-solid fa-ticket"></i>Coupons</a></li>
+                      <li><a class="dropdown-item" href="/about"><i class="fa-regular fa-message"></i>Message</a></li>
+                      <li><a class="dropdown-item" href="https://wa.me/{{ support_whatsapp }}" target="_blank"><i class="fa-brands fa-whatsapp"></i>Chats with Sellers</a></li>
+                      <li><a class="dropdown-item" href="/cart"><i class="fa-solid fa-cart-shopping"></i>Cart</a></li>
+                      {% if session.get("is_admin") %}
+                      <li><a class="dropdown-item" href="/admin"><i class="fa-solid fa-chart-line"></i>Admin Dashboard</a></li>
+                      {% endif %}
+                      <li><hr class="dropdown-divider"></li>
+                      <li><a class="dropdown-item logout-item" href="/logout"><i class="fa-solid fa-right-from-bracket"></i>Logout</a></li>
+                    </ul>
+                  </div>
                 {% else %}
                   <a class="zen-link" href="/signin">Not Signed in? Sign In Now</a>
                 {% endif %}

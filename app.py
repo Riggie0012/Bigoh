@@ -77,6 +77,12 @@ USE_CLOUDINARY = bool((os.getenv("CLOUDINARY_URL") or os.getenv("CLOUDINARY_CLOU
 LOYALTY_ENABLED = os.getenv("LOYALTY_ENABLED", "1") == "1"
 LOYALTY_REPEAT_ORDERS_MIN = int(os.getenv("LOYALTY_REPEAT_ORDERS_MIN", "2"))
 LOYALTY_REPEAT_DISCOUNT_PCT = float(os.getenv("LOYALTY_REPEAT_DISCOUNT_PCT", "5"))
+REFERRAL_ENABLED = os.getenv("REFERRAL_ENABLED", "1") == "1"
+REFERRAL_COUPON_EXPIRES_DAYS = int(os.getenv("REFERRAL_COUPON_EXPIRES_DAYS", "30"))
+REFERRAL_CODE_LEN = int(os.getenv("REFERRAL_CODE_LEN", "8"))
+COUPONS_PER_SIGNUP = int(os.getenv("COUPONS_PER_SIGNUP", "5"))
+COUPONS_PER_REFERRAL = int(os.getenv("COUPONS_PER_REFERRAL", "5"))
+COUPON_UNIT_AMOUNT = float(os.getenv("COUPON_UNIT_AMOUNT", "100"))
 PAYMENT_METHODS = [
     {"label": "M-Pesa", "icon": "fa-solid fa-money-bill-wave"},
     {"label": "Visa", "icon": "fa-brands fa-cc-visa"},
@@ -981,7 +987,7 @@ def _build_status_message(status: str, order_id: int, user_name: str, receipt_li
         ),
         "COMPLETED": (
             "Hello {name},\n"
-            "Your order #{order_id} has been completed.\n"
+            "Your order #{order_id} has been completed and payment has been confirmed.\n"
             "Invoice/Receipt: {receipt}\n"
             "For any queries, contact us on WhatsApp {support}.\n"
             "Regards,\n"
@@ -990,7 +996,8 @@ def _build_status_message(status: str, order_id: int, user_name: str, receipt_li
         "DELIVERED": (
             "Hello {name},\n"
             "Your order #{order_id} has been delivered.\n"
-            "Final Receipt: {receipt}\n"
+            "Payment is due after delivery (Cash on Delivery).\n"
+            "Your final paid receipt will be shared once payment is confirmed.\n"
             "Thank you for your business.\n"
             "Regards,\n"
             "{business}"
@@ -1245,12 +1252,12 @@ def task_review_requests():
                 order_id = _row_at(row, 0)
                 phone = _row_at(row, 2, "")
                 name = _row_at(row, 3, "") or "Customer"
-                receipt_link = url_for("order_receipt", order_id=order_id, _external=True)
+                orders_link = url_for("my_orders", _external=True)
                 message = (
                     f"Hello {name},\n"
                     f"Thank you for shopping with {BUSINESS_NAME}.\n"
                     f"Please leave a review for your order #{order_id}.\n"
-                    f"Receipt: {receipt_link}\n"
+                    f"Track your order here: {orders_link}\n"
                     f"We appreciate your feedback.\n"
                     f"- {BUSINESS_NAME}"
                 )
@@ -1347,6 +1354,14 @@ def task_daily_summary():
             revenue = float(_row_at(row, 1, 0) or 0)
 
             cur.execute(
+                "SELECT COUNT(*) FROM orders WHERE DATE(created_at)=CURDATE() AND status='PENDING'"
+            )
+            pending = int(_row_at(cur.fetchone(), 0, 0) or 0)
+            cur.execute(
+                "SELECT COUNT(*) FROM orders WHERE DATE(created_at)=CURDATE() AND status='PROCESSING'"
+            )
+            processing = int(_row_at(cur.fetchone(), 0, 0) or 0)
+            cur.execute(
                 "SELECT COUNT(*) FROM orders WHERE DATE(created_at)=CURDATE() AND status='DELIVERED'"
             )
             delivered = int(_row_at(cur.fetchone(), 0, 0) or 0)
@@ -1385,7 +1400,7 @@ def task_daily_summary():
         f"{BUSINESS_NAME} Daily Summary (today)\n"
         f"Orders: {orders_count}\n"
         f"Revenue: KES {revenue:,.2f}\n"
-        f"Completed: {completed} | Delivered: {delivered} | Cancelled: {cancelled}\n"
+        f"Pending: {pending} | Processing: {processing} | Delivered: {delivered} | Completed: {completed} | Cancelled: {cancelled}\n"
         f"Low stock items: {low_stock}\n"
         f"Top products:\n{top_lines}"
     )
@@ -1541,7 +1556,7 @@ def get_loyalty_discount(conn, user_id: int, subtotal: float):
                 SELECT COUNT(*)
                 FROM orders
                 WHERE user_id = %s
-                  AND status IN ('COMPLETED', 'DELIVERED')
+                  AND status IN ('DELIVERED', 'COMPLETED')
                 """,
                 (user_id,),
             )
@@ -1555,6 +1570,439 @@ def get_loyalty_discount(conn, user_id: int, subtotal: float):
     discount = round(subtotal * (LOYALTY_REPEAT_DISCOUNT_PCT / 100.0), 2)
     reason = f"Loyalty {LOYALTY_REPEAT_DISCOUNT_PCT:.0f}% (repeat customer)"
     return discount, reason, count
+
+
+REFERRAL_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+
+
+def _normalize_referral_code(value: str) -> str:
+    cleaned = re.sub(r"[^A-Z0-9]", "", str(value or "").upper())
+    return cleaned[:24]
+
+
+def ensure_coupon_schema(conn) -> bool:
+    if app.config.get("COUPON_SCHEMA_READY"):
+        return True
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS user_coupons (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    user_id INT NOT NULL,
+                    coupon_code VARCHAR(40) NOT NULL,
+                    amount DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+                    reason VARCHAR(160) NOT NULL,
+                    status VARCHAR(20) NOT NULL DEFAULT 'ACTIVE',
+                    source_user_id INT NULL,
+                    issued_for_user_id INT NULL,
+                    used_order_id INT NULL,
+                    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    used_at DATETIME NULL,
+                    expires_at DATETIME NULL,
+                    UNIQUE KEY uniq_coupon_code (coupon_code),
+                    KEY idx_coupon_user_status (user_id, status, expires_at),
+                    KEY idx_coupon_used_order (used_order_id)
+                )
+                """
+            )
+        conn.commit()
+        app.config["COUPON_SCHEMA_READY"] = True
+        return True
+    except Exception:
+        app.config["COUPON_SCHEMA_READY"] = False
+        return False
+
+
+def ensure_referral_schema(conn) -> bool:
+    if not REFERRAL_ENABLED:
+        return False
+    if app.config.get("REFERRAL_SCHEMA_READY"):
+        return True
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS user_referrals (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    referrer_user_id INT NOT NULL,
+                    referred_user_id INT NOT NULL,
+                    referral_code VARCHAR(24) NOT NULL,
+                    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE KEY uniq_referred_user (referred_user_id),
+                    UNIQUE KEY uniq_referral_pair (referrer_user_id, referred_user_id),
+                    KEY idx_referrer_user_id (referrer_user_id),
+                    KEY idx_referral_code (referral_code)
+                )
+                """
+            )
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS user_coupons (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    user_id INT NOT NULL,
+                    coupon_code VARCHAR(40) NOT NULL,
+                    amount DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+                    reason VARCHAR(160) NOT NULL,
+                    status VARCHAR(20) NOT NULL DEFAULT 'ACTIVE',
+                    source_user_id INT NULL,
+                    issued_for_user_id INT NULL,
+                    used_order_id INT NULL,
+                    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    used_at DATETIME NULL,
+                    expires_at DATETIME NULL,
+                    UNIQUE KEY uniq_coupon_code (coupon_code),
+                    KEY idx_coupon_user_status (user_id, status, expires_at),
+                    KEY idx_coupon_used_order (used_order_id)
+                )
+                """
+            )
+            if not table_has_column(conn, "users", "referral_code"):
+                cur.execute("ALTER TABLE users ADD COLUMN referral_code VARCHAR(24) NULL")
+                app.config[_schema_cache_key("users", "referral_code")] = True
+            try:
+                cur.execute("CREATE UNIQUE INDEX uniq_users_referral_code ON users (referral_code)")
+            except Exception:
+                pass
+        conn.commit()
+        app.config["REFERRAL_SCHEMA_READY"] = True
+        return True
+    except Exception:
+        app.config["REFERRAL_SCHEMA_READY"] = False
+        return False
+
+
+def _generate_referral_code(length: int = 8) -> str:
+    code_len = max(6, min(int(length or 8), 16))
+    return "".join(secrets.choice(REFERRAL_ALPHABET) for _ in range(code_len))
+
+
+def ensure_user_referral_code(conn, user_id: int, username: str = "") -> str:
+    if not REFERRAL_ENABLED or not user_id:
+        return ""
+    if not app.config.get("REFERRAL_SCHEMA_READY") and not ensure_referral_schema(conn):
+        return ""
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT referral_code FROM users WHERE id=%s LIMIT 1", (user_id,))
+            row = cur.fetchone()
+            existing = _normalize_referral_code(_row_at(row, 0, ""))
+            if existing:
+                return existing
+
+            base = _normalize_referral_code(username)[:6]
+            for _ in range(24):
+                suffix = _generate_referral_code(REFERRAL_CODE_LEN)
+                candidate = f"{base}{suffix}"[:24] if base else suffix
+                cur.execute("SELECT 1 FROM users WHERE referral_code=%s LIMIT 1", (candidate,))
+                if cur.fetchone():
+                    continue
+                cur.execute("UPDATE users SET referral_code=%s WHERE id=%s", (candidate, user_id))
+                return candidate
+    except Exception:
+        return ""
+    return ""
+
+
+def _coupon_expires_at():
+    if REFERRAL_COUPON_EXPIRES_DAYS <= 0:
+        return None
+    return _now_utc() + timedelta(days=REFERRAL_COUPON_EXPIRES_DAYS)
+
+
+def _generate_coupon_code(prefix: str = "BIGOH") -> str:
+    clean = _normalize_referral_code(prefix)[:8] or "BIGOH"
+    return f"{clean}-{secrets.token_hex(4).upper()}"
+
+
+def create_user_coupon(
+    cur,
+    user_id: int,
+    amount: float,
+    reason: str,
+    source_user_id: int = None,
+    issued_for_user_id: int = None,
+    prefix: str = "BIGOH",
+):
+    if not user_id:
+        return ""
+    try:
+        amount_value = round(float(amount or 0), 2)
+    except Exception:
+        amount_value = 0.0
+    if amount_value < 0:
+        amount_value = 0.0
+
+    expires_at = _coupon_expires_at()
+    for _ in range(8):
+        coupon_code = _generate_coupon_code(prefix)
+        try:
+            cur.execute(
+                """
+                INSERT INTO user_coupons
+                (user_id, coupon_code, amount, reason, status, source_user_id, issued_for_user_id, expires_at)
+                VALUES (%s, %s, %s, %s, 'ACTIVE', %s, %s, %s)
+                """,
+                (
+                    user_id,
+                    coupon_code,
+                    amount_value,
+                    str(reason or "Signup coupon")[:160],
+                    source_user_id,
+                    issued_for_user_id,
+                    expires_at,
+                ),
+            )
+            return coupon_code
+        except pymysql.err.IntegrityError:
+            continue
+        except Exception:
+            return ""
+    return ""
+
+
+def issue_user_coupons(
+    cur,
+    user_id: int,
+    count: int,
+    reason: str,
+    source_user_id: int = None,
+    issued_for_user_id: int = None,
+    prefix: str = "BIGOH",
+    amount: float = None,
+):
+    try:
+        coupon_count = max(0, int(count or 0))
+    except Exception:
+        coupon_count = 0
+    if not user_id or coupon_count <= 0:
+        return []
+
+    coupon_amount = COUPON_UNIT_AMOUNT if amount is None else amount
+    issued = []
+    for _ in range(coupon_count):
+        code = create_user_coupon(
+            cur,
+            user_id=user_id,
+            amount=coupon_amount,
+            reason=reason,
+            source_user_id=source_user_id,
+            issued_for_user_id=issued_for_user_id,
+            prefix=prefix,
+        )
+        if code:
+            issued.append(code)
+    return issued
+
+
+def apply_signup_coupon_rewards(conn, user_id: int) -> dict:
+    result = {
+        "applied": False,
+        "message": "",
+        "issued_count": 0,
+    }
+    if not user_id:
+        return result
+    if not ensure_coupon_schema(conn):
+        return result
+
+    reward_reason = "Signup reward (new account)"
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT COUNT(*)
+                FROM user_coupons
+                WHERE user_id = %s
+                  AND reason = %s
+                """,
+                (user_id, reward_reason),
+            )
+            already_issued = int(_row_at(cur.fetchone(), 0, 0) or 0)
+            target_count = max(0, int(COUPONS_PER_SIGNUP))
+            missing_count = max(0, target_count - already_issued)
+            issued_codes = issue_user_coupons(
+                cur,
+                user_id=user_id,
+                count=missing_count,
+                reason=reward_reason,
+                issued_for_user_id=user_id,
+                prefix="WELCOME",
+            )
+        issued_count = len(issued_codes)
+        result["issued_count"] = issued_count
+        result["applied"] = issued_count > 0
+        if issued_count > 0:
+            result["message"] = f"Signup bonus applied: {issued_count} coupons added to your account."
+    except Exception:
+        return result
+    return result
+
+
+def apply_signup_referral_rewards(conn, referred_user_id: int, referral_input: str) -> dict:
+    result = {
+        "applied": False,
+        "message": "",
+        "referrer_name": "",
+        "referrer_coupon_count": 0,
+    }
+    if not REFERRAL_ENABLED or not referred_user_id:
+        return result
+
+    raw_ref = str(referral_input or "").strip()
+    if not raw_ref:
+        return result
+
+    if not ensure_referral_schema(conn):
+        result["message"] = "Referral rewards are unavailable right now."
+        return result
+
+    try:
+        with conn.cursor() as cur:
+            normalized = _normalize_referral_code(raw_ref)
+            referrer_row = None
+            if normalized:
+                cur.execute(
+                    "SELECT id, username, referral_code FROM users WHERE referral_code=%s LIMIT 1",
+                    (normalized,),
+                )
+                referrer_row = cur.fetchone()
+
+            if not referrer_row:
+                cur.execute(
+                    "SELECT id, username, referral_code FROM users WHERE username=%s OR email=%s LIMIT 1",
+                    (raw_ref, raw_ref.lower()),
+                )
+                referrer_row = cur.fetchone()
+                if referrer_row:
+                    normalized = _normalize_referral_code(_row_at(referrer_row, 2, ""))
+
+            if not referrer_row:
+                result["message"] = "Referral code was not recognized."
+                return result
+
+            referrer_id = int(_row_at(referrer_row, 0, 0) or 0)
+            referrer_name = str(_row_at(referrer_row, 1, "") or "")
+            result["referrer_name"] = referrer_name
+            if not referrer_id or referrer_id == int(referred_user_id):
+                result["message"] = "You cannot use your own referral code."
+                return result
+
+            cur.execute("SELECT 1 FROM user_referrals WHERE referred_user_id=%s LIMIT 1", (referred_user_id,))
+            if cur.fetchone():
+                return result
+
+            if not normalized:
+                normalized = ensure_user_referral_code(conn, referrer_id, referrer_name)
+            cur.execute(
+                """
+                INSERT INTO user_referrals (referrer_user_id, referred_user_id, referral_code)
+                VALUES (%s, %s, %s)
+                """,
+                (referrer_id, referred_user_id, normalized or _normalize_referral_code(raw_ref)),
+            )
+
+            referrer_coupons = issue_user_coupons(
+                cur,
+                user_id=referrer_id,
+                count=COUPONS_PER_REFERRAL,
+                reason="Referral reward (friend completed signup)",
+                source_user_id=referred_user_id,
+                issued_for_user_id=referred_user_id,
+                prefix="REFER",
+            )
+
+            referrer_coupon_count = len(referrer_coupons)
+            result["referrer_coupon_count"] = referrer_coupon_count
+            result["applied"] = referrer_coupon_count > 0
+            if referrer_coupon_count > 0:
+                result["message"] = (
+                    f"Referral applied: your referrer received {referrer_coupon_count} coupons."
+                )
+    except pymysql.err.IntegrityError:
+        return result
+    except Exception:
+        result["message"] = "Referral rewards could not be issued."
+    return result
+
+
+def get_best_active_coupon(conn, user_id: int, subtotal: float):
+    if not user_id or subtotal <= 0:
+        return None
+    if not ensure_coupon_schema(conn):
+        return None
+    try:
+        with conn.cursor() as cur:
+            now = _now_utc()
+            cur.execute(
+                """
+                SELECT id, coupon_code, amount, reason
+                FROM user_coupons
+                WHERE user_id = %s
+                  AND status = 'ACTIVE'
+                  AND amount > 0
+                  AND (expires_at IS NULL OR expires_at >= %s)
+                ORDER BY amount DESC, id ASC
+                LIMIT 1
+                """,
+                (user_id, now),
+            )
+            row = cur.fetchone()
+            if not row:
+                return None
+            raw_amount = float(_row_at(row, 2, 0) or 0)
+            if raw_amount <= 0:
+                return None
+            return {
+                "id": int(_row_at(row, 0, 0) or 0),
+                "code": str(_row_at(row, 1, "") or ""),
+                "amount": min(round(raw_amount, 2), round(float(subtotal), 2)),
+                "reason": str(_row_at(row, 3, "") or ""),
+            }
+    except Exception:
+        return None
+
+
+def calculate_checkout_discount(conn, user_id: int, subtotal: float):
+    subtotal = round(float(subtotal or 0), 2)
+    if subtotal <= 0:
+        return 0.0, "", 0, None
+
+    coupon = get_best_active_coupon(conn, user_id, subtotal)
+    if not coupon:
+        return 0.0, "", 0, None
+
+    coupon_discount = min(float(coupon.get("amount", 0) or 0), subtotal)
+    coupon_discount = round(coupon_discount, 2)
+    if coupon_discount <= 0:
+        return 0.0, "", 0, None
+
+    coupon["applied_amount"] = coupon_discount
+    reason = f"Coupon {coupon.get('code', '')}".strip()
+    return coupon_discount, reason, 0, coupon
+
+
+def consume_user_coupon(cur, coupon_id: int, order_id: int) -> bool:
+    if not coupon_id or not order_id:
+        return False
+    now = _now_utc()
+    try:
+        cur.execute(
+            """
+            UPDATE user_coupons
+            SET status = 'USED',
+                used_order_id = %s,
+                used_at = %s
+            WHERE id = %s
+              AND status = 'ACTIVE'
+              AND (expires_at IS NULL OR expires_at >= %s)
+            """,
+            (order_id, now, coupon_id, now),
+        )
+        return cur.rowcount > 0
+    except Exception:
+        return False
+
 
 def admin_required(view):
     @wraps(view)
@@ -2277,7 +2725,7 @@ def get_product_reviews(conn, product_id, viewer_name=None):
                     JOIN order_items oi ON oi.order_id = o.order_id
                     WHERE o.user_id = %s
                       AND oi.product_id = %s
-                      AND o.status IN ('COMPLETED', 'DELIVERED')
+                      AND o.status IN ('DELIVERED', 'COMPLETED')
                     LIMIT 1
                     """,
                     (user_id, product_id),
@@ -2873,7 +3321,7 @@ def has_verified_purchase(conn, user_id: int, product_id: int) -> bool:
                 JOIN order_items oi ON oi.order_id = o.order_id
                 WHERE o.user_id = %s
                   AND oi.product_id = %s
-                  AND o.status IN ('COMPLETED', 'DELIVERED')
+                  AND o.status IN ('DELIVERED', 'COMPLETED')
                 LIMIT 1
                 """,
                 (user_id, product_id),
@@ -3152,6 +3600,7 @@ def signup():
             email = request.form.get('email', '').strip().lower()
             phone_raw = request.form.get('phone', '').strip()
             phone = normalize_phone_number(phone_raw)
+            referral_input = (request.form.get("referral_code") or "").strip()
             password1 = request.form['password1']
             password2 = request.form['password2']
             strength_error = validate_password_strength(password1)
@@ -3205,8 +3654,12 @@ def signup():
                 connection.close()
                 return render_template('signup.html', error='Email or username already registered.', error_field="both")
 
+            signup_coupon_result = {"applied": False, "message": ""}
+            referral_result = {"applied": False, "message": ""}
+            user_referral_code = ""
             try:
                 user_id = cursor.lastrowid
+                user_referral_code = ensure_user_referral_code(connection, user_id, username)
                 with connection.cursor() as ver_cur:
                     ver_cur.execute(
                         """
@@ -3230,17 +3683,41 @@ def signup():
                             "phone_otp_attempts": 0,
                         },
                     )
+                signup_coupon_result = apply_signup_coupon_rewards(connection, user_id)
+                referral_result = apply_signup_referral_rewards(connection, user_id, referral_input)
                 connection.commit()
             except Exception:
                 connection.close()
                 return render_template('signup.html', error='Signup failed. Please try again.')
+            connection.close()
 
             send_signup_confirmation(username, email)
+            message_parts = ["Signup successful."]
+            if user_referral_code:
+                signup_link = f"{request.host_url.rstrip('/')}{url_for('signup')}?ref={quote(user_referral_code)}"
+                message_parts.append(
+                    f"Your referral code is {user_referral_code}. Share this link to earn coupons: {signup_link}"
+                )
+            if signup_coupon_result.get("message"):
+                message_parts.append(signup_coupon_result["message"])
+            if referral_result.get("message"):
+                message_parts.append(referral_result["message"])
+            next_url = _pop_next_url()
+            session.clear()
+            session.permanent = False
+            session["key"] = username
+            session["username"] = user_id
+            session["remember_me"] = False
+            session["is_admin"] = is_admin_identity(user_id, email)
+            if email:
+                session["user_email"] = email
+            if user_referral_code:
+                session["referral_code"] = user_referral_code
             set_site_message(
-                "Signup successful. You can now sign in.",
-                "info",
+                " ".join(message_parts),
+                "success",
             )
-            return redirect(url_for("signin"))
+            return redirect(next_url or url_for("home"))
         except Exception:
             app.logger.exception("Signup error")
             return render_template('signup.html', error='Signup failed. Please try again.')
@@ -3249,11 +3726,13 @@ def signup():
         _remember_next_url()
         prefill_email = (request.args.get("email") or "").strip().lower()
         prefill_name = (request.args.get("name") or "").strip()
+        prefill_referral = (request.args.get("ref") or "").strip().upper()
         return render_template(
             'signup.html',
             next_url=session.get("next_url", ""),
             prefill_email=prefill_email,
             prefill_name=prefill_name,
+            prefill_referral=prefill_referral,
         )
     
 
@@ -3509,6 +3988,7 @@ def add_phone():
             return render_template('add_phone.html', error="Please enter a valid phone number.")
 
         connection = get_db_connection()
+        user_referral_code = ""
         try:
             ensure_user_verification_schema(connection)
             with connection.cursor() as cur:
@@ -3537,6 +4017,9 @@ def add_phone():
                     (user_id,),
                 )
                 user_row = cur.fetchone()
+            user_referral_code = ensure_user_referral_code(
+                connection, user_id, _row_at(user_row, 0, "")
+            )
             connection.commit()
         except Exception:
             return render_template('add_phone.html', error="Unable to save phone number. Please try again.")
@@ -3586,6 +4069,10 @@ def add_phone():
         session["username"] = user_id
         session["remember_me"] = remember_me
         session["is_admin"] = is_admin_identity(user_id, email)
+        if email:
+            session["user_email"] = email
+        if user_referral_code:
+            session["referral_code"] = user_referral_code
         session.pop("pending_user_id", None)
         set_site_message("Phone saved successfully.", "success")
         return redirect(next_url or url_for("home"))
@@ -3603,8 +4090,13 @@ def login_google():
     intent = (request.args.get("intent") or "signin").strip().lower()
     if intent not in {"signin", "signup"}:
         intent = "signin"
+    google_referral_input = (request.args.get("ref") or "").strip()
     session["google_remember_me"] = remember_me
     session["google_intent"] = intent
+    if google_referral_input:
+        session["google_referral_code"] = google_referral_input
+    else:
+        session.pop("google_referral_code", None)
     _remember_next_url()
     redirect_uri = url_for("auth_google_callback", _external=True)
     return oauth.google.authorize_redirect(redirect_uri)
@@ -3638,8 +4130,12 @@ def auth_google_callback():
         return redirect(url_for("signin"))
 
     intent = session.pop("google_intent", "signin")
+    google_referral_input = (session.pop("google_referral_code", "") or "").strip()
     connection = get_db_connection()
     created_new = False
+    signup_coupon_result = {"applied": False, "message": ""}
+    referral_result = {"applied": False, "message": ""}
+    user_referral_code = ""
     try:
         ensure_user_verification_schema(connection)
         with connection.cursor() as cur:
@@ -3694,6 +4190,10 @@ def auth_google_callback():
                 user_id = cur.lastrowid
                 phone = ""
                 created_new = True
+            user_referral_code = ensure_user_referral_code(connection, user_id, username)
+            if created_new:
+                signup_coupon_result = apply_signup_coupon_rewards(connection, user_id)
+                referral_result = apply_signup_referral_rewards(connection, user_id, google_referral_input)
             connection.commit()
     except Exception:
         set_site_message("Unable to complete Google sign-in.", "danger")
@@ -3706,7 +4206,12 @@ def auth_google_callback():
 
     if not phone:
         session["pending_user_id"] = user_id
-        set_site_message("Please add your phone number to continue.", "warning")
+        msg = "Please add your phone number to continue."
+        if signup_coupon_result.get("message"):
+            msg = f"{signup_coupon_result['message']} {msg}"
+        if referral_result.get("message"):
+            msg = f"{referral_result['message']} {msg}"
+        set_site_message(msg, "warning")
         return redirect(url_for("add_phone"))
 
     if not email_verified:
@@ -3750,6 +4255,10 @@ def auth_google_callback():
     session["username"] = user_id
     session["remember_me"] = remember_me
     session["is_admin"] = is_admin_identity(user_id, email)
+    if email:
+        session["user_email"] = email
+    if user_referral_code:
+        session["referral_code"] = user_referral_code
     session.pop("pending_user_id", None)
 
     return redirect(next_url or url_for("home"))
@@ -3819,6 +4328,12 @@ def signin():
             user_email = user[3] if len(user) > 3 else None
             user_phone = user[4] if len(user) > 4 else None
             user_email = _fetch_user_email(cursor, user_id, user_email or "")
+            user_referral_code = ""
+            try:
+                user_referral_code = ensure_user_referral_code(connection, user_id, user_name)
+                connection.commit()
+            except Exception:
+                user_referral_code = ""
 
             connection.close()
             session.clear()
@@ -3829,6 +4344,10 @@ def signin():
             session['remember_me'] = remember_me
 
             session["is_admin"] = is_admin_identity(user_id, user_email or "")
+            if user_email:
+                session["user_email"] = user_email
+            if user_referral_code:
+                session["referral_code"] = user_referral_code
 
             send_login_notifications(user_name, user_email, user_phone)
 
@@ -4939,6 +5458,243 @@ def terms():
     return render_template("terms.html")
 
 
+ORDER_STATUS_LABELS = {
+    "PENDING": "Pending",
+    "PROCESSING": "Processing",
+    "DELIVERED": "Delivered",
+    "COMPLETED": "Completed",
+    "CANCELLED": "Cancelled",
+}
+ORDER_STATUS_SEQUENCE = tuple(ORDER_STATUS_LABELS.keys())
+ORDER_STATUS_TABS = [("ALL", "All")] + [
+    (code, ORDER_STATUS_LABELS[code]) for code in ORDER_STATUS_SEQUENCE
+]
+
+
+@app.route("/my-orders")
+def my_orders():
+    if not session.get("username"):
+        session["next_url"] = url_for("my_orders")
+        return redirect(url_for("signin"))
+
+    user_id = session.get("username")
+    status_filter = (request.args.get("status") or "ALL").strip().upper()
+    allowed = {code for code, _ in ORDER_STATUS_TABS}
+    if status_filter not in allowed:
+        status_filter = "ALL"
+
+    has_ref = orders_has_reference()
+    has_discount = orders_has_discount()
+    status_counts = {code: 0 for code, _ in ORDER_STATUS_TABS}
+    orders_view = []
+
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT status, COUNT(*)
+                FROM orders
+                WHERE user_id = %s
+                GROUP BY status
+                """,
+                (user_id,),
+            )
+            for row in cur.fetchall() or []:
+                status_key = str(_row_at(row, 0, "") or "").upper()
+                status_counts[status_key] = int(_row_at(row, 1, 0) or 0)
+
+            cols = ["order_id", "status", "subtotal", "created_at", "location", "payment_method"]
+            if has_ref:
+                cols.append("order_reference")
+            if has_discount:
+                cols.extend(["discount", "discount_reason"])
+
+            sql = f"SELECT {', '.join(cols)} FROM orders WHERE user_id = %s"
+            params = [user_id]
+            if status_filter != "ALL":
+                sql += " AND status = %s"
+                params.append(status_filter)
+            sql += " ORDER BY order_id DESC LIMIT 120"
+            cur.execute(sql, tuple(params))
+            orders = cur.fetchall() or []
+
+            order_ids = [int(_row_at(row, 0, 0) or 0) for row in orders if _row_at(row, 0, None)]
+            items_by_order = {}
+            first_product_id = {}
+            image_map = {}
+
+            if order_ids:
+                placeholders = ", ".join(["%s"] * len(order_ids))
+                cur.execute(
+                    f"""
+                    SELECT order_id, product_id, product_name, unit_price, quantity, line_total
+                    FROM order_items
+                    WHERE order_id IN ({placeholders})
+                    ORDER BY id ASC
+                    """,
+                    tuple(order_ids),
+                )
+                for row in cur.fetchall() or []:
+                    oid = int(_row_at(row, 0, 0) or 0)
+                    if not oid:
+                        continue
+                    items_by_order.setdefault(oid, []).append(row)
+                    if oid not in first_product_id:
+                        first_product_id[oid] = int(_row_at(row, 1, 0) or 0)
+
+                product_ids = sorted({pid for pid in first_product_id.values() if pid})
+                if product_ids:
+                    p_ph = ", ".join(["%s"] * len(product_ids))
+                    cur.execute(
+                        f"SELECT product_id, image_url FROM products WHERE product_id IN ({p_ph})",
+                        tuple(product_ids),
+                    )
+                    for row in cur.fetchall() or []:
+                        image_map[int(_row_at(row, 0, 0) or 0)] = _row_at(row, 1, "")
+
+            ref_idx = 6 if has_ref else None
+            discount_idx = (7 if has_ref else 6) if has_discount else None
+            for row in orders:
+                order_id = int(_row_at(row, 0, 0) or 0)
+                status = str(_row_at(row, 1, "PENDING") or "PENDING").upper()
+                amount = float(_row_at(row, 2, 0) or 0)
+                created_at = _row_at(row, 3, None)
+                location = str(_row_at(row, 4, "") or "")
+                payment_method = str(_row_at(row, 5, "") or "")
+
+                reference = f"ZC-{order_id:06d}"
+                if has_ref:
+                    custom_ref = _row_at(row, ref_idx, "")
+                    if custom_ref:
+                        reference = custom_ref
+
+                discount = float(_row_at(row, discount_idx, 0) or 0) if has_discount else 0.0
+                discount_reason = (
+                    str(_row_at(row, discount_idx + 1, "") or "") if has_discount else ""
+                )
+
+                item_rows = items_by_order.get(order_id, [])
+                first_item = item_rows[0] if item_rows else None
+                first_name = str(_row_at(first_item, 2, "No items") or "No items")
+                first_qty = int(_row_at(first_item, 4, 0) or 0)
+                first_total = float(_row_at(first_item, 5, 0) or 0)
+                extra_lines = max(len(item_rows) - 1, 0)
+                total_units = sum(int(_row_at(it, 4, 0) or 0) for it in item_rows)
+                pid = first_product_id.get(order_id)
+                image_path = image_map.get(pid, "images/hero.jpg")
+
+                orders_view.append(
+                    {
+                        "order_id": order_id,
+                        "reference": reference,
+                        "status": status,
+                        "amount": amount,
+                        "created_at": created_at,
+                        "location": location,
+                        "payment_method": payment_method,
+                        "discount": discount,
+                        "discount_reason": discount_reason,
+                        "first_item_name": first_name,
+                        "first_item_qty": first_qty,
+                        "first_item_total": first_total,
+                        "extra_lines": extra_lines,
+                        "total_units": total_units,
+                        "image_path": image_path,
+                    }
+                )
+    finally:
+        conn.close()
+
+    status_counts["ALL"] = sum(v for k, v in status_counts.items() if k != "ALL")
+    return render_template(
+        "my_orders.html",
+        orders=orders_view,
+        status_filter=status_filter,
+        status_tabs=ORDER_STATUS_TABS,
+        status_counts=status_counts,
+    )
+
+
+@app.route("/my-referrals")
+def my_referrals():
+    if not session.get("username"):
+        session["next_url"] = url_for("my_referrals")
+        return redirect(url_for("signin"))
+
+    user_id = session.get("username")
+    user_name = session.get("key", "")
+    referral_code = session.get("referral_code", "")
+    referral_link = ""
+    referrals = []
+    total_referrals = 0
+    active_coupons = 0
+    used_coupons = 0
+    total_coupons_earned = 0
+    error = ""
+
+    conn = get_db_connection()
+    try:
+        if not ensure_referral_schema(conn):
+            error = "Referral program is currently unavailable."
+        else:
+            referral_code = ensure_user_referral_code(conn, user_id, user_name)
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT
+                        u.id,
+                        u.username,
+                        u.email,
+                        u.phone,
+                        r.created_at
+                    FROM user_referrals r
+                    JOIN users u ON u.id = r.referred_user_id
+                    WHERE r.referrer_user_id = %s
+                    ORDER BY r.created_at DESC
+                    """,
+                    (user_id,),
+                )
+                referrals = cur.fetchall() or []
+                total_referrals = len(referrals)
+
+                now = _now_utc()
+                cur.execute(
+                    """
+                    SELECT
+                        SUM(CASE WHEN status='ACTIVE' AND (expires_at IS NULL OR expires_at >= %s) THEN 1 ELSE 0 END),
+                        SUM(CASE WHEN status='USED' THEN 1 ELSE 0 END),
+                        COUNT(*)
+                    FROM user_coupons
+                    WHERE user_id = %s
+                    """,
+                    (now, user_id),
+                )
+                stats = cur.fetchone()
+                active_coupons = int(_row_at(stats, 0, 0) or 0)
+                used_coupons = int(_row_at(stats, 1, 0) or 0)
+                total_coupons_earned = int(_row_at(stats, 2, 0) or 0)
+            conn.commit()
+    finally:
+        conn.close()
+
+    if referral_code:
+        session["referral_code"] = referral_code
+        referral_link = f"{request.host_url.rstrip('/')}{url_for('signup')}?ref={quote(referral_code)}"
+
+    return render_template(
+        "my_referrals.html",
+        referral_code=referral_code,
+        referral_link=referral_link,
+        referrals=referrals,
+        total_referrals=total_referrals,
+        active_coupons=active_coupons,
+        used_coupons=used_coupons,
+        total_coupons_earned=total_coupons_earned,
+        error=error,
+    )
+
+
 @app.route("/admin/review-photos")
 @admin_required
 def admin_review_photos():
@@ -5131,7 +5887,7 @@ def cart():
     if session.get("username"):
         conn = get_db_connection()
         try:
-            discount, discount_reason, repeat_count = get_loyalty_discount(
+            discount, discount_reason, repeat_count, _ = calculate_checkout_discount(
                 conn, session.get("username"), grand_total
             )
         finally:
@@ -5387,7 +6143,8 @@ def pay_on_delivery():
     ensure_orders_schema(conn)
     discount = 0.0
     discount_reason = ""
-    discount, discount_reason, _ = get_loyalty_discount(conn, user_id, subtotal)
+    applied_coupon = None
+    discount, discount_reason, _, applied_coupon = calculate_checkout_discount(conn, user_id, subtotal)
     total_after_discount = max(0.0, subtotal - discount)
 
     # 6) Store order in DB
@@ -5421,7 +6178,27 @@ def pay_on_delivery():
             """,
             (order_id, it["product_id"], it["product_name"], it["unit_price"], it["quantity"], it["line_total"])
         )
-
+    if applied_coupon and discount > 0:
+        coupon_consumed = consume_user_coupon(cur, applied_coupon.get("id"), order_id)
+        if not coupon_consumed:
+            # Fallback if coupon was concurrently used elsewhere.
+            discount = 0.0
+            discount_reason = ""
+            total_after_discount = subtotal
+            if orders_has_discount():
+                cur.execute(
+                    """
+                    UPDATE orders
+                    SET subtotal=%s, discount=%s, discount_reason=%s
+                    WHERE order_id=%s
+                    """,
+                    (total_after_discount, discount, discount_reason, order_id),
+                )
+            else:
+                cur.execute(
+                    "UPDATE orders SET subtotal=%s WHERE order_id=%s",
+                    (total_after_discount, order_id),
+                )
     conn.commit()
     cur.close()
     conn.close()
@@ -5452,9 +6229,9 @@ def pay_on_delivery():
     lines.append("")
     lines.append(f"SUBTOTAL: KES {subtotal:,.2f}")
     if discount > 0:
-        lines.append(f"LOYALTY DISCOUNT: -KES {discount:,.2f}")
+        lines.append(f"COUPON DISCOUNT: -KES {discount:,.2f}")
         if discount_reason:
-            lines.append(f"DISCOUNT NOTE: {discount_reason}")
+            lines.append(f"COUPON: {discount_reason}")
     lines.append(f"TOTAL: KES {total_after_discount:,.2f}")
     lines.append("")
     lines.append("Kindly send me payment details for my orders.")
@@ -5600,6 +6377,187 @@ def upload():
     return render_template("upload.html", categories=categories_list, submitted_category="")
 
 
+@app.route("/order/<int:order_id>/tracking")
+def order_tracking(order_id):
+    wants_json = (
+        request.headers.get("X-Requested-With") == "XMLHttpRequest"
+        or "application/json" in request.headers.get("Accept", "")
+    )
+    if not session.get("username") and not session.get("is_admin"):
+        if wants_json:
+            return jsonify(ok=False, message="Please sign in first."), 401
+        return redirect(url_for("signin"))
+
+    conn = get_db_connection()
+    try:
+        ensure_orders_delivery_columns(conn)
+        has_ref = orders_has_reference()
+        has_status_updated = table_has_column(conn, "orders", "status_updated_at")
+        has_delivered = table_has_column(conn, "orders", "delivered_at")
+        with conn.cursor() as cur:
+            cols = ["order_id", "user_id", "status", "created_at", "location"]
+            if has_ref:
+                cols.append("order_reference")
+            if has_status_updated:
+                cols.append("status_updated_at")
+            if has_delivered:
+                cols.append("delivered_at")
+            cur.execute(
+                f"""
+                SELECT {", ".join(cols)}
+                FROM orders
+                WHERE order_id = %s
+                """,
+                (order_id,),
+            )
+            row = cur.fetchone()
+            if not row:
+                if wants_json:
+                    return jsonify(ok=False, message="Order not found."), 404
+                return redirect(url_for("home"))
+
+            user_id = int(_row_at(row, 1, 0) or 0)
+            if not session.get("is_admin") and user_id != session.get("username"):
+                if wants_json:
+                    return jsonify(ok=False, message="Not allowed."), 403
+                return redirect(url_for("home"))
+
+            status = str(_row_at(row, 2, "PENDING") or "PENDING").upper()
+            created_at = _row_at(row, 3)
+            location = str(_row_at(row, 4, "") or "")
+
+            offset = 5
+            reference = f"ZC-{order_id:06d}"
+            if has_ref:
+                custom_ref = _row_at(row, offset, "")
+                if custom_ref:
+                    reference = custom_ref
+                offset += 1
+
+            status_updated_at = _row_at(row, offset) if has_status_updated else None
+            if has_status_updated:
+                offset += 1
+            delivered_at = _row_at(row, offset) if has_delivered else None
+    finally:
+        conn.close()
+
+    def _fmt(dt):
+        if not dt:
+            return ""
+        try:
+            return dt.strftime("%b %d, %Y at %H:%M")
+        except Exception:
+            return str(dt)
+
+    status_to_step = {
+        "PENDING": 1,
+        "PROCESSING": 2,
+        "DELIVERED": 3,
+        "COMPLETED": 4,
+        "CANCELLED": 1,
+    }
+    current_step = status_to_step.get(status, 1)
+    step_defs = [
+        ("ORDERED", "Ordered", "fa-regular fa-clipboard"),
+        ("TRANSIT", "In Transit", "fa-solid fa-truck"),
+        ("DELIVERED", "Delivered", "fa-solid fa-box-open"),
+        ("PAID", "Payment Confirmed", "fa-solid fa-money-bill-wave"),
+    ]
+    steps = []
+    for idx, (code, label, icon) in enumerate(step_defs, start=1):
+        if status == "CANCELLED":
+            done = idx == 1
+            current = False
+        else:
+            done = idx <= current_step
+            current = idx == current_step
+        steps.append(
+            {
+                "code": code,
+                "label": label,
+                "icon": icon,
+                "done": done,
+                "current": current,
+            }
+        )
+
+    events = []
+    events.append(
+        {
+            "title": "Order Placed",
+            "description": f"Your order {reference} was received and queued for processing.",
+            "time": _fmt(created_at),
+            "location": location,
+            "highlight": True,
+        }
+    )
+
+    if status in {"PROCESSING", "DELIVERED", "COMPLETED"}:
+        t = status_updated_at or created_at
+        events.append(
+            {
+                "title": "In Transit",
+                "description": "Your package has left our fulfillment point and is moving through delivery routes.",
+                "time": _fmt(t),
+                "location": location,
+                "highlight": status in {"PROCESSING"},
+            }
+        )
+    if status in {"DELIVERED", "COMPLETED"}:
+        t = delivered_at or status_updated_at or created_at
+        events.append(
+            {
+                "title": "Delivered",
+                "description": "Order delivered successfully. Payment is collected after delivery.",
+                "time": _fmt(t),
+                "location": location,
+                "highlight": status == "DELIVERED",
+            }
+        )
+    if status == "COMPLETED":
+        t = status_updated_at or delivered_at or created_at
+        events.append(
+            {
+                "title": "Payment Confirmed",
+                "description": "Cash-on-delivery payment was received and the order is now complete.",
+                "time": _fmt(t),
+                "location": location,
+                "highlight": True,
+            }
+        )
+    if status == "CANCELLED":
+        t = status_updated_at or created_at
+        events.append(
+            {
+                "title": "Order Cancelled",
+                "description": "This order was cancelled. Contact support if you need help.",
+                "time": _fmt(t),
+                "location": location,
+                "highlight": True,
+            }
+        )
+
+    tracking_number = f"KKE{order_id:010d}"
+    status_labels = {
+        "PENDING": "Pending",
+        "PROCESSING": "In Transit",
+        "DELIVERED": "Delivered - Payment Pending",
+        "COMPLETED": "Completed - Paid",
+        "CANCELLED": "Cancelled",
+    }
+    payload = {
+        "ok": True,
+        "order_id": order_id,
+        "order_reference": reference,
+        "tracking_number": tracking_number,
+        "status": status,
+        "status_label": status_labels.get(status, status.title()),
+        "steps": steps,
+        "events": events,
+    }
+    return jsonify(payload)
+
+
 @app.route("/order/confirmation/<int:order_id>")
 def order_confirmation(order_id):
     if not session.get("username"):
@@ -5706,9 +6664,12 @@ def order_receipt(order_id):
             if not session.get("is_admin") and user_id != session.get("username"):
                 return redirect(url_for("home"))
 
-            status = _row_at(order, 4, "")
-            if status not in ("COMPLETED", "DELIVERED"):
-                set_site_message("Receipt is available after admin confirmation.", "warning")
+            status = str(_row_at(order, 4, "") or "").upper()
+            if status not in ("DELIVERED", "COMPLETED"):
+                set_site_message(
+                    "Receipt is available after delivery. Final paid receipt is issued after payment confirmation.",
+                    "warning",
+                )
                 return redirect(url_for("order_confirmation", order_id=order_id))
 
             cur.execute(
@@ -5746,15 +6707,32 @@ def order_receipt(order_id):
     order_total = float(_row_at(order, 5, 0) or 0)
     receipt_date = datetime.now()
 
-    payment_details_lines = [line.strip() for line in PAYMENT_DETAILS_LINES.splitlines() if line.strip()]
-    transactions = [
-        {
-            "date": receipt_date.strftime("%A, %B %d, %Y"),
-            "gateway": _row_at(order, 3, ""),
-            "transaction_id": reference,
-            "amount": order_total,
-        }
-    ]
+    is_paid = str(_row_at(order, 4, "") or "").upper() == "COMPLETED"
+    payment_method = str(_row_at(order, 3, "") or "")
+    if is_paid:
+        payment_details_lines = [line.strip() for line in PAYMENT_DETAILS_LINES.splitlines() if line.strip()]
+    else:
+        payment_details_lines = [
+            f"Payment method: {payment_method or 'Cash on Delivery'}",
+            "Status: Payment pending",
+            "Payment is collected after delivery.",
+        ]
+    payment_details_title = PAYMENT_DETAILS_TITLE if is_paid else "Payment Status"
+
+    transactions = []
+    if is_paid:
+        transactions = [
+            {
+                "date": receipt_date.strftime("%A, %B %d, %Y"),
+                "gateway": payment_method,
+                "transaction_id": reference,
+                "amount": order_total,
+            }
+        ]
+
+    receipt_state_label = "PAID" if is_paid else "PAYMENT PENDING"
+    document_title = "Receipt" if is_paid else "Invoice"
+    due_date_label = receipt_date.strftime("%A, %B %d, %Y") if is_paid else "Pay on delivery"
     return render_template(
         "receipt.html",
         order=order,
@@ -5774,7 +6752,11 @@ def order_receipt(order_id):
         support_phone=SUPPORT_PHONE,
         support_whatsapp=SUPPORT_WHATSAPP,
         receipt_date=receipt_date,
-        payment_details_title=PAYMENT_DETAILS_TITLE,
+        is_paid=is_paid,
+        receipt_state_label=receipt_state_label,
+        document_title=document_title,
+        due_date_label=due_date_label,
+        payment_details_title=payment_details_title,
         payment_details_lines=payment_details_lines,
         transactions=transactions,
     )
@@ -5795,8 +6777,9 @@ def admin_dashboard():
         "revenue": 0.0,
         "quantity": 0,
         "pending": 0,
-        "completed": 0,
+        "processing": 0,
         "delivered": 0,
+        "completed": 0,
         "cancelled": 0,
     }
     orders = []
@@ -5828,8 +6811,9 @@ def admin_dashboard():
         metrics["revenue"] = _scalar(cur, "SELECT COALESCE(SUM(subtotal), 0) FROM orders", default=0.0)
         metrics["quantity"] = _scalar(cur, "SELECT COALESCE(SUM(quantity), 0) FROM order_items", default=0)
         metrics["pending"] = _scalar(cur, "SELECT COUNT(*) FROM orders WHERE status = %s", ("PENDING",), default=0)
-        metrics["completed"] = _scalar(cur, "SELECT COUNT(*) FROM orders WHERE status = %s", ("COMPLETED",), default=0)
+        metrics["processing"] = _scalar(cur, "SELECT COUNT(*) FROM orders WHERE status = %s", ("PROCESSING",), default=0)
         metrics["delivered"] = _scalar(cur, "SELECT COUNT(*) FROM orders WHERE status = %s", ("DELIVERED",), default=0)
+        metrics["completed"] = _scalar(cur, "SELECT COUNT(*) FROM orders WHERE status = %s", ("COMPLETED",), default=0)
         metrics["cancelled"] = _scalar(cur, "SELECT COUNT(*) FROM orders WHERE status = %s", ("CANCELLED",), default=0)
         repeat_customers = _scalar(
             cur,
@@ -6049,8 +7033,12 @@ def admin_dashboard():
         if conn:
             conn.close()
 
-    status_labels = [_row_at(row, 0) for row in status_rows]
-    status_values = [int(_row_at(row, 1, 0)) for row in status_rows]
+    status_totals = {
+        str(_row_at(row, 0, "") or "").upper(): int(_row_at(row, 1, 0) or 0)
+        for row in status_rows
+    }
+    status_labels = [ORDER_STATUS_LABELS[code] for code in ORDER_STATUS_SEQUENCE]
+    status_values = [int(status_totals.get(code, 0)) for code in ORDER_STATUS_SEQUENCE]
 
     category_labels = [_row_at(row, 0) for row in category_rows]
     category_values = [int(_row_at(row, 1, 0)) for row in category_rows]
@@ -6385,7 +7373,7 @@ def admin_sponsored_products():
 @admin_required
 def admin_update_order_status(order_id):
     status = request.form.get("status", "").strip().upper()
-    allowed = {"PENDING", "PROCESSING", "COMPLETED", "DELIVERED", "CANCELLED"}
+    allowed = set(ORDER_STATUS_SEQUENCE)
     if status not in allowed:
         return redirect(request.referrer or url_for("admin_dashboard"))
 
@@ -6395,8 +7383,14 @@ def admin_update_order_status(order_id):
             ensure_orders_delivery_columns(conn)
             cur.execute("SELECT status, user_id FROM orders WHERE order_id=%s", (order_id,))
             row = cur.fetchone()
-            prev_status = _row_at(row, 0, "")
+            prev_status = str(_row_at(row, 0, "") or "").upper()
             user_id = _row_at(row, 1, None)
+            if status == "COMPLETED" and prev_status not in {"DELIVERED", "COMPLETED"}:
+                set_site_message(
+                    "For pay-after-delivery orders, mark this order as DELIVERED before COMPLETED.",
+                    "warning",
+                )
+                return redirect(request.referrer or url_for("admin_dashboard"))
             cur.execute(
                 "UPDATE orders SET status=%s, status_updated_at=NOW() WHERE order_id=%s",
                 (status, order_id),
@@ -6429,10 +7423,13 @@ def admin_send_receipt(order_id):
         with conn.cursor() as cur:
             cur.execute("SELECT status, user_id FROM orders WHERE order_id=%s", (order_id,))
             row = cur.fetchone()
-            status = _row_at(row, 0, "")
+            status = str(_row_at(row, 0, "") or "").upper()
             user_id = _row_at(row, 1, None)
-            if status not in ("COMPLETED", "DELIVERED"):
-                set_site_message("Receipt can be sent only after completion.", "warning")
+            if status != "COMPLETED":
+                set_site_message(
+                    "Final receipt can be sent only after payment is confirmed (COMPLETED).",
+                    "warning",
+                )
                 return redirect(request.referrer or url_for("admin_orders"))
             if not user_id:
                 set_site_message("Customer not found for this order.", "warning")
@@ -6446,7 +7443,7 @@ def admin_send_receipt(order_id):
     receipt_link = url_for("order_receipt", order_id=order_id, _external=True)
     message = (
         f"Hello,\n"
-        f"Your order #{order_id} has been confirmed.\n"
+        f"Your order #{order_id} has been completed and payment has been confirmed.\n"
         f"Invoice/Receipt: {receipt_link}\n"
         f"Regards,\n"
         f"{BUSINESS_NAME}"
