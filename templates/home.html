@@ -217,22 +217,22 @@
         </div>
         <a class="flash-sale-link" href="/flash-sales">See All <i class="fa-solid fa-angle-right"></i></a>
        </div>
-       <div class="flash-sale-body">
-         {% set flash_items = flash_sales if flash_sales is defined else [] %}
-         {% if flash_items is defined and flash_items|length > 0 %}
-           <ul class="flash-sale-list">
-             {% for item in flash_items[:6] %}
+      <div class="flash-sale-body">
+        {% set flash_items = flash_sales if flash_sales is defined else [] %}
+        {% if flash_items is defined and flash_items|length > 0 %}
+          <ul class="flash-sale-list">
+            {% for item in flash_items[:6] %}
                {% set price = item[4]|float %}
                {% set discount = ((item[0]|int * 7) % 35) + 10 %}
                {% set old_price = price / (1 - (discount / 100)) %}
                {% set remaining = item[5]|int if item[5] is not none else ((item[0]|int * 13) % 50 + 5) %}
                {% set bar_pct = 10 if remaining < 10 else (remaining if remaining < 100 else 100) %}
-               <li class="flash-sale-card">
+              <li class="flash-sale-card product-grid-card">
                  
-                 <a href="/single_item/{{ item[0]}}" class="flash-sale-image">
+                <a href="/single_item/{{ item[0]}}" class="flash-sale-image">
                    <img src="{{ image_url(item[7]) }}" alt="{{ item[1] }}" loading="lazy" decoding="async">
                    <span class="flash-sale-badge">-{{ discount }}%</span>
-                 </a>
+                </a>
                  <div class="flash-sale-name">{{ item[1] }}</div>
                  <div class="flash-sale-price">KSh {{ price|round(0, 'ceil') }}</div>
                 <div class="quality-check"><i class="fa-solid fa-circle-check"></i> Quality checked</div>
@@ -253,15 +253,14 @@
                 <div class="text-danger small mb-2">Low stock: {{ item[5] }} left</div>
                 {% endif %}
                 <a href="/single_item/{{ item[0] }}" class="btn btn-sm btn-outline-primary">View</a>
-              </div>
-            </div>
-          </li>
-        {% endfor %}
-      </ul>
+              </li>
+            {% endfor %}
+          </ul>
+        {% else %}
+          <p class="text-muted mb-0">No sponsored products right now.</p>
+        {% endif %}
+      </div>
     </section>
-    {% else %}
-      <p class="text-muted">No sponsored products right now.</p>
-    {% endif %}
 
     {% if categories is defined and categories|length > 0 %}
       {% for cat in categories %}
