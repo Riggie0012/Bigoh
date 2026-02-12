@@ -1942,7 +1942,7 @@ def get_best_active_coupon(conn, user_id: int, subtotal: float):
                   AND status = 'ACTIVE'
                   AND amount > 0
                   AND (expires_at IS NULL OR expires_at >= %s)
-                ORDER BY amount DESC, id ASC
+                ORDER BY amount DESC, created_at ASC
                 LIMIT 1
                 """,
                 (user_id, now),
@@ -2675,7 +2675,7 @@ def get_product_reviews(conn, product_id, viewer_name=None):
                 SELECT user_name, rating, comment, created_at, is_seed, review_photo, review_photo_approved
                 FROM product_reviews
                 WHERE product_id = %s AND TRIM(comment) <> ''
-                ORDER BY created_at DESC, id DESC
+                ORDER BY created_at DESC, user_name DESC
                 """,
                 (product_id,),
             )
@@ -5531,7 +5531,7 @@ def my_orders():
                     SELECT order_id, product_id, product_name, unit_price, quantity, line_total
                     FROM order_items
                     WHERE order_id IN ({placeholders})
-                    ORDER BY id ASC
+                    ORDER BY order_id ASC, product_id ASC
                     """,
                     tuple(order_ids),
                 )
