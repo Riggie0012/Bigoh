@@ -272,6 +272,14 @@
       .zen-account-menu .dropdown-item:hover i {
         color: #111827;
       }
+      .zen-account-menu .dropdown-item.active {
+        background: #fef2f2;
+        color: #dc2626;
+        font-weight: 700;
+      }
+      .zen-account-menu .dropdown-item.active i {
+        color: #dc2626;
+      }
       .zen-account-menu .logout-item {
         color: #fff !important;
         background: linear-gradient(180deg, #f97316 0%, #ef4444 100%);
@@ -724,13 +732,15 @@
                       </span>
                     </button>
                     <ul class="dropdown-menu dropdown-menu-end zen-account-menu">
-                      <li><a class="dropdown-item" href="/my-orders"><i class="fa-regular fa-rectangle-list"></i>My Orders</a></li>
-                      <li><a class="dropdown-item" href="/returns"><i class="fa-solid fa-hand-holding-dollar"></i>After Sale</a></li>
-                      <li><a class="dropdown-item" href="{{ url_for('account_settings', section='addresses') }}"><i class="fa-solid fa-location-dot"></i>Address Book</a></li>
-                      <li><a class="dropdown-item" href="/my-referrals"><i class="fa-solid fa-ticket"></i>Coupons</a></li>
+                      {% set current_path = request.path or '/' %}
+                      <li><a class="dropdown-item{% if current_path.startswith('/account') %} active{% endif %}" href="{{ url_for('account_settings', section='addresses') }}"><i class="fa-regular fa-user"></i>My Account</a></li>
+                      <li><a class="dropdown-item{% if current_path.startswith('/my-orders') %} active{% endif %}" href="/my-orders"><i class="fa-regular fa-rectangle-list"></i>My Orders</a></li>
+                      <li><a class="dropdown-item{% if current_path.startswith('/returns') %} active{% endif %}" href="/returns"><i class="fa-solid fa-hand-holding-dollar"></i>After Sale</a></li>
+                      <li><a class="dropdown-item{% if current_path.startswith('/account/addresses') %} active{% endif %}" href="{{ url_for('account_settings', section='addresses') }}"><i class="fa-solid fa-location-dot"></i>Address Book</a></li>
+                      <li><a class="dropdown-item{% if current_path.startswith('/my-referrals') %} active{% endif %}" href="/my-referrals"><i class="fa-solid fa-ticket"></i>Coupons</a></li>
                       <li><a class="dropdown-item" href="https://wa.me/{{ support_whatsapp }}" target="_blank"><i class="fa-brands fa-whatsapp"></i>Chats with Sellers</a></li>
                       {% if session.get("is_admin") %}
-                      <li><a class="dropdown-item" href="/admin"><i class="fa-solid fa-chart-line"></i>Admin Dashboard</a></li>
+                      <li><a class="dropdown-item{% if current_path.startswith('/admin') %} active{% endif %}" href="/admin"><i class="fa-solid fa-chart-line"></i>Admin Dashboard</a></li>
                       {% endif %}
                       <li><hr class="dropdown-divider"></li>
                       <li><a class="dropdown-item logout-item" href="/logout"><i class="fa-solid fa-right-from-bracket"></i>Logout</a></li>
