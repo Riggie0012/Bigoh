@@ -1,0 +1,479 @@
+{% extends 'base.html' %}
+{% block title %}{{ section_label }} | My Account{% endblock %}
+{% block extra_head %}
+<style>
+  .account-page {
+    background: #f3f4f6;
+  }
+  .account-crumb {
+    font-size: 1.15rem;
+    color: #111827;
+    font-weight: 700;
+    margin-bottom: 14px;
+  }
+  .account-crumb a {
+    color: #111827;
+    text-decoration: none;
+  }
+  .account-crumb .sep {
+    color: #9ca3af;
+    margin: 0 8px;
+    font-weight: 500;
+  }
+  .account-card,
+  .account-panel {
+    background: #fff;
+    border: 1px solid #dbe2ea;
+    border-radius: 8px;
+  }
+  .account-card {
+    padding: 18px 16px;
+  }
+  .avatar-badge {
+    width: 136px;
+    height: 136px;
+    border-radius: 50%;
+    margin: 4px auto 14px;
+    background: #cfd4db;
+    color: #fff;
+    display: grid;
+    place-items: center;
+    font-size: 2rem;
+    font-weight: 700;
+    box-shadow: inset 0 0 0 5px #eef2f7;
+  }
+  .profile-email {
+    text-align: center;
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: #111827;
+    word-break: break-word;
+    margin-bottom: 14px;
+  }
+  .menu-head {
+    font-size: 1.2rem;
+    font-weight: 700;
+    color: #111827;
+    margin: 12px 0 8px;
+  }
+  .menu-link {
+    display: block;
+    color: #1f2937;
+    text-decoration: none;
+    font-size: 1rem;
+    line-height: 1.4;
+    padding: 8px 0;
+  }
+  .menu-link:hover,
+  .menu-link.active {
+    color: #ef4444;
+  }
+  .menu-head-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .menu-head-row .arrow {
+    color: #1f2937;
+    font-size: 1rem;
+  }
+
+  .account-panel {
+    padding: 18px;
+  }
+  .panel-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 12px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid #d1d5db;
+  }
+  .panel-head h2 {
+    margin: 0;
+    font-size: 1.9rem;
+    font-weight: 700;
+    color: #1f2937;
+  }
+  .btn-add {
+    border: none;
+    border-radius: 8px;
+    background: linear-gradient(90deg, #f97316 0%, #ef4444 100%);
+    color: #fff;
+    font-weight: 700;
+    padding: 8px 14px;
+    text-decoration: none;
+    font-size: 1rem;
+  }
+  .form-card {
+    border: 1px solid #e5e7eb;
+    border-radius: 10px;
+    background: #fff;
+    padding: 14px;
+    margin-bottom: 14px;
+  }
+  .form-label {
+    font-weight: 700;
+    color: #374151;
+    margin-bottom: 4px;
+    font-size: 1.05rem;
+  }
+  .form-control,
+  .form-select {
+    border-radius: 8px;
+    border: 1px solid #d1d5db;
+    min-height: 46px;
+    font-size: 1rem;
+  }
+  textarea.form-control {
+    min-height: 96px;
+  }
+  .hint {
+    color: #6b7280;
+    font-size: 0.95rem;
+  }
+  .action-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  .btn-main {
+    border: none;
+    border-radius: 8px;
+    background: linear-gradient(90deg, #f97316 0%, #ef4444 100%);
+    color: #fff;
+    font-weight: 700;
+    padding: 9px 16px;
+    font-size: 1.1rem;
+  }
+  .btn-lightish {
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+    background: #fff;
+    color: #111827;
+    font-weight: 600;
+    padding: 8px 14px;
+    font-size: 1.05rem;
+  }
+  .current-box {
+    background: #f3f4f6;
+    border: 1px solid #e5e7eb;
+    border-radius: 10px;
+    padding: 14px;
+    margin-bottom: 12px;
+  }
+  .current-box .label {
+    font-size: 1.05rem;
+    color: #4b5563;
+    margin-bottom: 4px;
+  }
+  .current-box .value {
+    font-size: 1.45rem;
+    font-weight: 700;
+    color: #111827;
+    word-break: break-word;
+  }
+
+  .address-card {
+    border: 1px solid #e5e7eb;
+    border-radius: 10px;
+    padding: 14px;
+    margin-bottom: 12px;
+    background: #fff;
+  }
+  .address-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    align-items: flex-start;
+  }
+  .address-label {
+    color: #22c55e;
+    font-weight: 700;
+    font-size: 1rem;
+  }
+  .default-pill {
+    background: #ecfdf5;
+    border: 1px solid #bbf7d0;
+    color: #166534;
+    font-size: 0.88rem;
+    font-weight: 700;
+    border-radius: 999px;
+    padding: 3px 10px;
+  }
+  .address-line {
+    color: #1f2937;
+    font-size: 0.98rem;
+    margin-bottom: 6px;
+    line-height: 1.45;
+  }
+  .address-meta {
+    color: #374151;
+    font-size: 0.98rem;
+    margin-bottom: 3px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .address-actions {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid #eef2f7;
+  }
+  .inline-form {
+    margin: 0;
+  }
+  .edit-wrap {
+    margin-top: 10px;
+    border-top: 1px dashed #d1d5db;
+    padding-top: 10px;
+  }
+  .empty-box {
+    border: 1px dashed #d1d5db;
+    border-radius: 10px;
+    padding: 18px;
+    text-align: center;
+    color: #6b7280;
+    background: #fff;
+  }
+
+  @media (max-width: 991px) {
+    .account-page {
+      padding-top: 0 !important;
+    }
+    .account-crumb {
+      font-size: 1rem;
+      margin-bottom: 10px;
+    }
+    .avatar-badge {
+      width: 90px;
+      height: 90px;
+      font-size: 1.3rem;
+      margin-bottom: 8px;
+    }
+    .profile-email {
+      font-size: 0.95rem;
+    }
+    .menu-head {
+      font-size: 1.1rem;
+      margin-top: 8px;
+    }
+    .menu-link {
+      font-size: 1rem;
+      padding: 6px 0;
+    }
+    .panel-head h2 {
+      font-size: 1.6rem;
+    }
+    .current-box .value {
+      font-size: 1.35rem;
+    }
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="account-page py-4">
+  <div class="container">
+    <div class="account-crumb">
+      <a href="/">Home</a><span class="sep">&rsaquo;</span><a href="{{ url_for('account_settings', section='addresses') }}">My Account</a><span class="sep">&rsaquo;</span>{{ section_label }}
+    </div>
+
+    <div class="row g-3">
+      <div class="col-lg-3">
+        <div class="account-card">
+          <div class="avatar-badge">{{ (account_user.username or "U")[0]|upper }}</div>
+          <div class="profile-email">{{ account_user.email or account_user.username }}</div>
+          <hr>
+
+          <div class="menu-head-row">
+            <div class="menu-head">My Account</div>
+            <span class="arrow">&rsaquo;</span>
+          </div>
+          <a class="menu-link {% if section == 'addresses' %}active{% endif %}" href="{{ url_for('account_settings', section='addresses') }}">Addresses Book</a>
+          <a class="menu-link {% if section == 'phone' %}active{% endif %}" href="{{ url_for('account_settings', section='phone') }}">Phone Number</a>
+          <a class="menu-link {% if section == 'email' %}active{% endif %}" href="{{ url_for('account_settings', section='email') }}">Email</a>
+          <a class="menu-link {% if section == 'password' %}active{% endif %}" href="{{ url_for('account_settings', section='password') }}">Setting Password</a>
+
+          <div class="menu-head-row">
+            <div class="menu-head">My Assets</div>
+            <span class="arrow">&rsaquo;</span>
+          </div>
+          <a class="menu-link" href="{{ url_for('my_referrals') }}">Coupons</a>
+
+          <div class="menu-head-row">
+            <div class="menu-head">My Orders</div>
+            <span class="arrow">&rsaquo;</span>
+          </div>
+          <a class="menu-link" href="{{ url_for('my_orders') }}">Order History</a>
+        </div>
+      </div>
+
+      <div class="col-lg-9">
+        <div class="account-panel">
+          <div class="panel-head">
+            <h2>{{ section_label }}</h2>
+            {% if section == "addresses" %}
+            <a class="btn-add" href="#addAddressForm">+ Add New Address</a>
+            {% endif %}
+          </div>
+
+          {% if section == "addresses" %}
+          <form id="addAddressForm" class="form-card" method="post" action="{{ url_for('account_settings', section='addresses') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="action" value="add">
+            <div class="row g-2">
+              <div class="col-md-6">
+                <label class="form-label">Recipient Name</label>
+                <input type="text" name="recipient_name" class="form-control" placeholder="Full name" required>
+              </div>
+              <div class="col-md-6">
+                <label class="form-label">Phone Number</label>
+                <input type="tel" name="phone" class="form-control" placeholder="e.g. 0700123456" required>
+              </div>
+              <div class="col-md-4">
+                <label class="form-label">Address Type</label>
+                <select name="address_label" class="form-select">
+                  <option value="Pickup Station">Pickup Station</option>
+                  <option value="Home">Home</option>
+                  <option value="Office">Office</option>
+                </select>
+              </div>
+              <div class="col-md-8">
+                <label class="form-label">Address Details</label>
+                <textarea name="address_line" class="form-control" placeholder="Estate, street, landmark, and delivery notes" required></textarea>
+              </div>
+            </div>
+            <div class="action-row mt-2">
+              <label class="form-check-label">
+                <input class="form-check-input" type="checkbox" name="set_as_default" value="1"> Set as default address
+              </label>
+              <button type="submit" class="btn-main ms-auto">Save Address</button>
+            </div>
+          </form>
+
+          {% if addresses and addresses|length > 0 %}
+            {% for addr in addresses %}
+            <div class="address-card">
+              <div class="address-head">
+                <div>
+                  <div class="address-meta"><i class="fa-solid fa-user"></i> {{ addr.recipient_name }}</div>
+                  <div class="address-meta"><i class="fa-solid fa-phone"></i> {{ addr.phone }}</div>
+                </div>
+                <div class="text-end">
+                  <div class="address-label">{{ addr.address_label }}</div>
+                  {% if addr.is_default %}
+                  <span class="default-pill">Default</span>
+                  {% endif %}
+                </div>
+              </div>
+              <div class="address-line"><i class="fa-solid fa-location-dot"></i> {{ addr.address_line }}</div>
+
+              <div class="address-actions">
+                {% if not addr.is_default %}
+                <form class="inline-form" method="post" action="{{ url_for('account_settings', section='addresses') }}">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <input type="hidden" name="action" value="set_default">
+                  <input type="hidden" name="address_id" value="{{ addr.id }}">
+                  <button type="submit" class="btn-lightish">Set default address</button>
+                </form>
+                {% endif %}
+
+                <details class="w-100 edit-wrap">
+                  <summary class="btn-lightish d-inline-block">Edit</summary>
+                  <form method="post" action="{{ url_for('account_settings', section='addresses') }}" class="mt-2">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <input type="hidden" name="action" value="edit">
+                    <input type="hidden" name="address_id" value="{{ addr.id }}">
+                    <div class="row g-2">
+                      <div class="col-md-6">
+                        <input type="text" name="recipient_name" class="form-control" value="{{ addr.recipient_name }}" required>
+                      </div>
+                      <div class="col-md-6">
+                        <input type="tel" name="phone" class="form-control" value="{{ addr.phone }}" required>
+                      </div>
+                      <div class="col-md-4">
+                        <select name="address_label" class="form-select">
+                          <option value="Pickup Station" {% if addr.address_label == 'Pickup Station' %}selected{% endif %}>Pickup Station</option>
+                          <option value="Home" {% if addr.address_label == 'Home' %}selected{% endif %}>Home</option>
+                          <option value="Office" {% if addr.address_label == 'Office' %}selected{% endif %}>Office</option>
+                        </select>
+                      </div>
+                      <div class="col-md-8">
+                        <textarea name="address_line" class="form-control" required>{{ addr.address_line }}</textarea>
+                      </div>
+                    </div>
+                    <div class="action-row mt-2">
+                      <label class="form-check-label">
+                        <input class="form-check-input" type="checkbox" name="set_as_default" value="1"> Set as default
+                      </label>
+                      <button type="submit" class="btn-main ms-auto">Save Changes</button>
+                    </div>
+                  </form>
+                </details>
+
+                <form class="inline-form ms-auto" method="post" action="{{ url_for('account_settings', section='addresses') }}" onsubmit="return confirm('Delete this address?');">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <input type="hidden" name="action" value="delete">
+                  <input type="hidden" name="address_id" value="{{ addr.id }}">
+                  <button type="submit" class="btn-lightish">Delete</button>
+                </form>
+              </div>
+            </div>
+            {% endfor %}
+          {% else %}
+            <div class="empty-box">No addresses yet. Add your first delivery address above.</div>
+          {% endif %}
+
+          {% elif section == "phone" %}
+          <div class="current-box">
+            <div class="label">Current Phone</div>
+            <div class="value">{{ account_user.phone or "Not set" }}</div>
+          </div>
+          <form class="form-card" method="post" action="{{ url_for('account_settings', section='phone') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="action" value="save">
+            <label class="form-label">New Phone Number</label>
+            <input type="tel" name="new_phone" class="form-control mb-2" placeholder="Enter new phone number" required>
+            <div class="hint mb-2">Phone verification is applied automatically after update.</div>
+            <button type="submit" class="btn-main">Submit</button>
+          </form>
+
+          {% elif section == "email" %}
+          <div class="current-box">
+            <div class="label">Current Email</div>
+            <div class="value">{{ account_user.email or "Not set" }}</div>
+          </div>
+          <form class="form-card" method="post" action="{{ url_for('account_settings', section='email') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="action" value="save">
+            <label class="form-label">New Email</label>
+            <input type="email" name="new_email" class="form-control mb-2" placeholder="Enter new email" required>
+            <div class="hint mb-2">Email verification is applied automatically after update.</div>
+            <button type="submit" class="btn-main">Submit</button>
+          </form>
+
+          {% elif section == "password" %}
+          <form class="form-card" method="post" action="{{ url_for('account_settings', section='password') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="action" value="save">
+            <label class="form-label">New Password</label>
+            <input type="password" name="new_password" class="form-control mb-2" placeholder="Enter new password" required>
+            <label class="form-label">Confirm New Password</label>
+            <input type="password" name="confirm_password" class="form-control mb-2" placeholder="Confirm new password" required>
+            <div class="hint mb-2">Use a strong password with letters, numbers and symbols.</div>
+            <button type="submit" class="btn-main">Submit</button>
+          </form>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -1704,6 +1704,118 @@ def ensure_user_referral_code(conn, user_id: int, username: str = "") -> str:
     return ""
 
 
+def ensure_user_addresses_schema(conn) -> bool:
+    if app.config.get("USER_ADDRESSES_SCHEMA_READY"):
+        return True
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS user_addresses (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    user_id INT NOT NULL,
+                    recipient_name VARCHAR(120) NOT NULL,
+                    phone VARCHAR(32) NOT NULL,
+                    address_line TEXT NOT NULL,
+                    address_label VARCHAR(80) NOT NULL DEFAULT 'Pickup Station',
+                    is_default TINYINT(1) NOT NULL DEFAULT 0,
+                    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    KEY idx_user_addresses_user (user_id),
+                    KEY idx_user_addresses_default (user_id, is_default)
+                )
+                """
+            )
+        conn.commit()
+        app.config["USER_ADDRESSES_SCHEMA_READY"] = True
+        return True
+    except Exception:
+        app.config["USER_ADDRESSES_SCHEMA_READY"] = False
+        return False
+
+
+def _account_section_label(section: str) -> str:
+    labels = {
+        "addresses": "Addresses Book",
+        "phone": "Phone Number",
+        "email": "Email",
+        "password": "Setting Password",
+    }
+    return labels.get(str(section or "").strip().lower(), "My Account")
+
+
+def _normalize_address_label(label: str) -> str:
+    value = str(label or "").strip()
+    if not value:
+        return "Pickup Station"
+    return value[:80]
+
+
+def _ensure_single_default_address(cur, user_id: int):
+    cur.execute(
+        """
+        SELECT id, is_default
+        FROM user_addresses
+        WHERE user_id = %s
+        ORDER BY is_default DESC, id ASC
+        """,
+        (user_id,),
+    )
+    rows = cur.fetchall() or []
+    if not rows:
+        return
+    picked_id = None
+    for row in rows:
+        if int(_row_at(row, 1, 0) or 0) == 1:
+            picked_id = int(_row_at(row, 0, 0) or 0)
+            break
+    if not picked_id:
+        picked_id = int(_row_at(rows[0], 0, 0) or 0)
+    cur.execute("UPDATE user_addresses SET is_default = 0 WHERE user_id = %s", (user_id,))
+    cur.execute(
+        "UPDATE user_addresses SET is_default = 1 WHERE user_id = %s AND id = %s",
+        (user_id, picked_id),
+    )
+
+
+def _get_account_user(conn, user_id: int):
+    with conn.cursor() as cur:
+        cur.execute("SELECT username, email, phone FROM users WHERE id=%s LIMIT 1", (user_id,))
+        row = cur.fetchone() or ("User", "", "")
+    return {
+        "username": str(_row_at(row, 0, "User") or "User"),
+        "email": str(_row_at(row, 1, "") or ""),
+        "phone": str(_row_at(row, 2, "") or ""),
+    }
+
+
+def _get_user_addresses(conn, user_id: int):
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT id, recipient_name, phone, address_line, address_label, is_default
+            FROM user_addresses
+            WHERE user_id = %s
+            ORDER BY is_default DESC, updated_at DESC, id DESC
+            """,
+            (user_id,),
+        )
+        rows = cur.fetchall() or []
+    items = []
+    for row in rows:
+        items.append(
+            {
+                "id": int(_row_at(row, 0, 0) or 0),
+                "recipient_name": str(_row_at(row, 1, "") or ""),
+                "phone": str(_row_at(row, 2, "") or ""),
+                "address_line": str(_row_at(row, 3, "") or ""),
+                "address_label": str(_row_at(row, 4, "Pickup Station") or "Pickup Station"),
+                "is_default": bool(_row_at(row, 5, 0)),
+            }
+        )
+    return items
+
+
 def _coupon_expires_at():
     if REFERRAL_COUPON_EXPIRES_DAYS <= 0:
         return None
@@ -5456,6 +5568,214 @@ def privacy_policy():
 @app.route("/terms")
 def terms():
     return render_template("terms.html")
+
+
+ACCOUNT_SECTIONS = ("addresses", "phone", "email", "password")
+
+
+@app.route("/account")
+def account_settings_root():
+    if not session.get("username"):
+        session["next_url"] = url_for("account_settings_root")
+        return redirect(url_for("signin"))
+    return redirect(url_for("account_settings", section="addresses"))
+
+
+@app.route("/account/<section>", methods=["GET", "POST"])
+def account_settings(section):
+    if not session.get("username"):
+        session["next_url"] = url_for("account_settings", section=section)
+        return redirect(url_for("signin"))
+
+    section = str(section or "").strip().lower()
+    if section not in ACCOUNT_SECTIONS:
+        return redirect(url_for("account_settings", section="addresses"))
+
+    user_id = session.get("username")
+    conn = get_db_connection()
+    try:
+        ensure_user_addresses_schema(conn)
+        if request.method == "POST":
+            action = (request.form.get("action") or "save").strip().lower()
+            with conn.cursor() as cur:
+                if section == "addresses":
+                    if action == "add":
+                        recipient_name = str(request.form.get("recipient_name", "") or "").strip()[:120]
+                        phone = normalize_phone_number(request.form.get("phone", ""))
+                        address_line = str(request.form.get("address_line", "") or "").strip()[:600]
+                        address_label = _normalize_address_label(request.form.get("address_label", ""))
+                        make_default = request.form.get("set_as_default") == "1"
+                        if not recipient_name or not phone or not address_line:
+                            set_site_message(
+                                "Recipient name, phone and address are required.",
+                                "warning",
+                            )
+                        else:
+                            cur.execute(
+                                "SELECT COUNT(*) FROM user_addresses WHERE user_id = %s",
+                                (user_id,),
+                            )
+                            count = int(_row_at(cur.fetchone(), 0, 0) or 0)
+                            is_default = 1 if count == 0 or make_default else 0
+                            cur.execute(
+                                """
+                                INSERT INTO user_addresses
+                                (user_id, recipient_name, phone, address_line, address_label, is_default)
+                                VALUES (%s, %s, %s, %s, %s, %s)
+                                """,
+                                (user_id, recipient_name, phone, address_line, address_label, is_default),
+                            )
+                            _ensure_single_default_address(cur, user_id)
+                            conn.commit()
+                            set_site_message("Address added successfully.", "success")
+                    elif action == "edit":
+                        try:
+                            address_id = int(request.form.get("address_id") or 0)
+                        except Exception:
+                            address_id = 0
+                        recipient_name = str(request.form.get("recipient_name", "") or "").strip()[:120]
+                        phone = normalize_phone_number(request.form.get("phone", ""))
+                        address_line = str(request.form.get("address_line", "") or "").strip()[:600]
+                        address_label = _normalize_address_label(request.form.get("address_label", ""))
+                        make_default = request.form.get("set_as_default") == "1"
+                        if not address_id or not recipient_name or not phone or not address_line:
+                            set_site_message("Please provide valid address details.", "warning")
+                        else:
+                            cur.execute(
+                                """
+                                UPDATE user_addresses
+                                SET recipient_name=%s, phone=%s, address_line=%s, address_label=%s
+                                WHERE id=%s AND user_id=%s
+                                """,
+                                (recipient_name, phone, address_line, address_label, address_id, user_id),
+                            )
+                            if make_default:
+                                cur.execute("UPDATE user_addresses SET is_default=0 WHERE user_id=%s", (user_id,))
+                                cur.execute(
+                                    "UPDATE user_addresses SET is_default=1 WHERE user_id=%s AND id=%s",
+                                    (user_id, address_id),
+                                )
+                            _ensure_single_default_address(cur, user_id)
+                            conn.commit()
+                            set_site_message("Address updated successfully.", "success")
+                    elif action == "delete":
+                        try:
+                            address_id = int(request.form.get("address_id") or 0)
+                        except Exception:
+                            address_id = 0
+                        if not address_id:
+                            set_site_message("Invalid address selected.", "warning")
+                        else:
+                            cur.execute(
+                                "DELETE FROM user_addresses WHERE id=%s AND user_id=%s",
+                                (address_id, user_id),
+                            )
+                            _ensure_single_default_address(cur, user_id)
+                            conn.commit()
+                            set_site_message("Address removed.", "success")
+                    elif action == "set_default":
+                        try:
+                            address_id = int(request.form.get("address_id") or 0)
+                        except Exception:
+                            address_id = 0
+                        if not address_id:
+                            set_site_message("Invalid address selected.", "warning")
+                        else:
+                            cur.execute("UPDATE user_addresses SET is_default=0 WHERE user_id=%s", (user_id,))
+                            cur.execute(
+                                "UPDATE user_addresses SET is_default=1 WHERE user_id=%s AND id=%s",
+                                (user_id, address_id),
+                            )
+                            _ensure_single_default_address(cur, user_id)
+                            conn.commit()
+                            set_site_message("Default address updated.", "success")
+                    else:
+                        set_site_message("Unsupported address action.", "warning")
+                elif section == "phone":
+                    phone = normalize_phone_number(request.form.get("new_phone", ""))
+                    if not phone:
+                        set_site_message("Please enter a valid phone number.", "warning")
+                    else:
+                        now = _now_utc()
+                        ensure_user_verification_schema(conn)
+                        if table_has_column(conn, "users", "phone_verified") and table_has_column(
+                            conn, "users", "phone_verified_at"
+                        ):
+                            cur.execute(
+                                """
+                                UPDATE users
+                                SET phone=%s, phone_verified=1, phone_verified_at=%s
+                                WHERE id=%s
+                                """,
+                                (phone, now, user_id),
+                            )
+                        else:
+                            cur.execute("UPDATE users SET phone=%s WHERE id=%s", (phone, user_id))
+                        conn.commit()
+                        set_site_message("Phone number updated.", "success")
+                elif section == "email":
+                    email = str(request.form.get("new_email", "") or "").strip().lower()
+                    if not validate_email_format(email):
+                        set_site_message("Please enter a valid email address.", "warning")
+                    else:
+                        cur.execute("SELECT 1 FROM users WHERE email=%s AND id<>%s LIMIT 1", (email, user_id))
+                        if cur.fetchone():
+                            set_site_message("That email is already in use.", "warning")
+                        else:
+                            now = _now_utc()
+                            ensure_user_verification_schema(conn)
+                            if table_has_column(conn, "users", "email_verified") and table_has_column(
+                                conn, "users", "email_verified_at"
+                            ):
+                                cur.execute(
+                                    """
+                                    UPDATE users
+                                    SET email=%s, email_verified=1, email_verified_at=%s
+                                    WHERE id=%s
+                                    """,
+                                    (email, now, user_id),
+                                )
+                            else:
+                                cur.execute("UPDATE users SET email=%s WHERE id=%s", (email, user_id))
+                            conn.commit()
+                            session["user_email"] = email
+                            set_site_message("Email updated successfully.", "success")
+                elif section == "password":
+                    password1 = request.form.get("new_password", "")
+                    password2 = request.form.get("confirm_password", "")
+                    if not password1 or not password2:
+                        set_site_message("Please fill both password fields.", "warning")
+                    elif password1 != password2:
+                        set_site_message("Passwords do not match.", "warning")
+                    else:
+                        strength_error = validate_password_strength(password1)
+                        if strength_error:
+                            set_site_message(strength_error, "warning")
+                        else:
+                            cur.execute(
+                                "UPDATE users SET password=%s WHERE id=%s",
+                                (generate_password_hash(password1), user_id),
+                            )
+                            conn.commit()
+                            set_site_message("Password changed successfully.", "success")
+            return redirect(url_for("account_settings", section=section))
+
+        account_user = _get_account_user(conn, user_id)
+        addresses = _get_user_addresses(conn, user_id)
+    except Exception:
+        app.logger.exception("Account settings error for section=%s", section)
+        set_site_message("Unable to load account settings right now.", "danger")
+        return redirect(url_for("my_orders"))
+    finally:
+        conn.close()
+
+    return render_template(
+        "account_settings.html",
+        section=section,
+        section_label=_account_section_label(section),
+        account_user=account_user,
+        addresses=addresses,
+    )
 
 
 ORDER_STATUS_LABELS = {

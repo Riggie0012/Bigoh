@@ -726,7 +726,7 @@
                     <ul class="dropdown-menu dropdown-menu-end zen-account-menu">
                       <li><a class="dropdown-item" href="/my-orders"><i class="fa-regular fa-rectangle-list"></i>My Orders</a></li>
                       <li><a class="dropdown-item" href="/returns"><i class="fa-solid fa-hand-holding-dollar"></i>After Sale</a></li>
-                      <li><a class="dropdown-item" href="/shipping"><i class="fa-solid fa-location-dot"></i>Address Book</a></li>
+                      <li><a class="dropdown-item" href="{{ url_for('account_settings', section='addresses') }}"><i class="fa-solid fa-location-dot"></i>Address Book</a></li>
                       <li><a class="dropdown-item" href="/my-referrals"><i class="fa-solid fa-ticket"></i>Coupons</a></li>
                       <li><a class="dropdown-item" href="https://wa.me/{{ support_whatsapp }}" target="_blank"><i class="fa-brands fa-whatsapp"></i>Chats with Sellers</a></li>
                       {% if session.get("is_admin") %}
