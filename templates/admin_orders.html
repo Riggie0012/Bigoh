@@ -104,6 +104,92 @@
     .table-dark td {
       border-color: var(--border);
     }
+    .panel .table-responsive {
+      overflow-x: visible;
+    }
+    .orders-table {
+      width: 100%;
+      table-layout: fixed;
+    }
+    .orders-table th,
+    .orders-table td {
+      white-space: normal;
+      word-break: break-word;
+      overflow-wrap: anywhere;
+      vertical-align: middle;
+      line-height: 1.25;
+      padding: 0.5rem 0.45rem;
+      font-size: 0.9rem;
+    }
+    .orders-table th {
+      font-size: 0.72rem;
+      letter-spacing: 0.05em;
+      color: var(--muted);
+      text-transform: uppercase;
+    }
+    .orders-table .mono {
+      white-space: normal;
+      word-break: break-all;
+      font-size: 0.88rem;
+    }
+    .orders-table .update-form {
+      min-width: 0;
+    }
+    .orders-table .update-select {
+      min-width: 0;
+      font-size: 0.78rem;
+      padding: 4px 26px 4px 8px;
+    }
+    .orders-table .btn-save {
+      white-space: nowrap;
+      padding: 0.24rem 0.5rem;
+      font-size: 0.74rem;
+    }
+    .orders-table .view-btn {
+      white-space: nowrap;
+      padding: 0.24rem 0.5rem;
+      font-size: 0.78rem;
+    }
+    @media (max-width: 1500px) {
+      .orders-table .col-phone,
+      .orders-table .cell-phone {
+        display: none;
+      }
+    }
+    @media (max-width: 1280px) {
+      .orders-table .col-payment,
+      .orders-table .cell-payment {
+        display: none;
+      }
+    }
+    @media (max-width: 1120px) {
+      .orders-table .col-reference,
+      .orders-table .cell-reference {
+        display: none;
+      }
+      .orders-table .update-form {
+        display: grid !important;
+        gap: 4px !important;
+      }
+      .orders-table .btn-save {
+        width: 100%;
+      }
+    }
+    @media (max-width: 980px) {
+      .orders-table .col-location,
+      .orders-table .cell-location {
+        display: none;
+      }
+      .orders-table th,
+      .orders-table td {
+        font-size: 0.82rem;
+        padding: 0.42rem 0.35rem;
+      }
+      .orders-table .badge-status {
+        font-size: 10px;
+        padding: 4px 7px;
+      }
+    }
 
     .badge-status {
       padding: 6px 10px;
@@ -185,70 +271,70 @@
 
       <section class="panel">
         <div class="table-responsive">
-          <table class="table table-dark table-striped align-middle">
+          <table class="table table-dark table-striped align-middle orders-table">
             <thead>
               <tr>
-                <th>#</th>
-                {% if has_reference %}<th>Reference</th>{% endif %}
-                <th>Customer</th>
-                <th>Phone</th>
-                <th>Location</th>
-                <th>Payment</th>
-                <th>Status</th>
-                <th>Subtotal</th>
-                <th>Details</th>
-                <th>Update</th>
+                <th class="col-id">#</th>
+                {% if has_reference %}<th class="col-reference">Reference</th>{% endif %}
+                <th class="col-customer">Customer</th>
+                <th class="col-phone">Phone</th>
+                <th class="col-location">Location</th>
+                <th class="col-payment">Payment</th>
+                <th class="col-status">Status</th>
+                <th class="col-subtotal">Subtotal</th>
+                <th class="col-details">Details</th>
+                <th class="col-update">Update</th>
               </tr>
             </thead>
             <tbody>
               {% for o in orders %}
               <tr>
-                <td class="mono">{{ o[0] }}</td>
+                <td class="mono cell-id">{{ o[0] }}</td>
                 {% if has_reference %}
-                  <td class="mono">{{ o[1] or "-" }}</td>
-                  <td>{{ o[2] or "Customer" }}</td>
-                  <td class="mono">{{ o[3] or "-" }}</td>
-                  <td>{{ o[4] }}</td>
-                  <td>{{ o[5] }}</td>
-                  <td>
+                  <td class="mono cell-reference">{{ o[1] or "-" }}</td>
+                  <td class="cell-customer">{{ o[2] or "Customer" }}</td>
+                  <td class="mono cell-phone">{{ o[3] or "-" }}</td>
+                  <td class="cell-location">{{ o[4] }}</td>
+                  <td class="cell-payment">{{ (o[5] or "-")|replace("_", " ") }}</td>
+                  <td class="cell-status">
                     <span class="badge-status status-{{ o[6] }}">{{ o[6] }}</span>
                   </td>
-                  <td class="text-danger mono">KES {{ "{:,.2f}".format(o[7] or 0) }}</td>
-                  <td>
-                    <a href="/admin/orders/{{ o[0] }}" class="btn btn-sm btn-outline-light">View</a>
+                  <td class="text-danger mono cell-subtotal">KES {{ "{:,.2f}".format(o[7] or 0) }}</td>
+                  <td class="cell-details">
+                    <a href="/admin/orders/{{ o[0] }}" class="btn btn-sm btn-outline-light view-btn">View</a>
                   </td>
-                  <td>
-                    <form method="POST" action="{{ url_for('admin_update_order_status', order_id=o[0]) }}" class="d-flex gap-2">
+                  <td class="cell-update">
+                    <form method="POST" action="{{ url_for('admin_update_order_status', order_id=o[0]) }}" class="d-flex gap-2 update-form">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                      <select name="status" class="form-select form-select-sm admin-select">
+                      <select name="status" class="form-select form-select-sm admin-select update-select">
                         {% for s in ["PENDING", "PROCESSING", "DELIVERED", "COMPLETED", "CANCELLED"] %}
                           <option value="{{ s }}" {% if o[6] == s %}selected{% endif %}>{{ s }}</option>
                         {% endfor %}
                       </select>
-                      <button class="btn btn-sm btn-primary" type="submit">Save</button>
+                      <button class="btn btn-sm btn-primary btn-save" type="submit">Save</button>
                     </form>
                   </td>
                 {% else %}
-                  <td>{{ o[1] or "Customer" }}</td>
-                  <td class="mono">{{ o[2] or "-" }}</td>
-                  <td>{{ o[3] }}</td>
-                  <td>{{ o[4] }}</td>
-                  <td>
+                  <td class="cell-customer">{{ o[1] or "Customer" }}</td>
+                  <td class="mono cell-phone">{{ o[2] or "-" }}</td>
+                  <td class="cell-location">{{ o[3] }}</td>
+                  <td class="cell-payment">{{ (o[4] or "-")|replace("_", " ") }}</td>
+                  <td class="cell-status">
                     <span class="badge-status status-{{ o[5] }}">{{ o[5] }}</span>
                   </td>
-                  <td class="text-danger mono">KES {{ "{:,.2f}".format(o[6] or 0) }}</td>
-                  <td>
-                    <a href="/admin/orders/{{ o[0] }}" class="btn btn-sm btn-outline-light">View</a>
+                  <td class="text-danger mono cell-subtotal">KES {{ "{:,.2f}".format(o[6] or 0) }}</td>
+                  <td class="cell-details">
+                    <a href="/admin/orders/{{ o[0] }}" class="btn btn-sm btn-outline-light view-btn">View</a>
                   </td>
-                  <td>
-                    <form method="POST" action="{{ url_for('admin_update_order_status', order_id=o[0]) }}" class="d-flex gap-2">
+                  <td class="cell-update">
+                    <form method="POST" action="{{ url_for('admin_update_order_status', order_id=o[0]) }}" class="d-flex gap-2 update-form">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                      <select name="status" class="form-select form-select-sm admin-select">
+                      <select name="status" class="form-select form-select-sm admin-select update-select">
                         {% for s in ["PENDING", "PROCESSING", "DELIVERED", "COMPLETED", "CANCELLED"] %}
                           <option value="{{ s }}" {% if o[5] == s %}selected{% endif %}>{{ s }}</option>
                         {% endfor %}
                       </select>
-                      <button class="btn btn-sm btn-primary" type="submit">Save</button>
+                      <button class="btn btn-sm btn-primary btn-save" type="submit">Save</button>
                     </form>
                   </td>
                 {% endif %}
