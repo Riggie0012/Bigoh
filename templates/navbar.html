@@ -62,7 +62,8 @@
       .zen-links .nav-link {
         color: var(--zen-text);
         font-weight: 600;
-        margin-right: 8px;
+        margin-right: 6px;
+        font-size: 0.98rem;
         position: relative;
         display: inline-flex;
         align-items: center;
@@ -150,17 +151,20 @@
         display: flex;
         gap: 10px;
         align-items: center;
-        flex-wrap: wrap;
+        flex-wrap: nowrap;
+        white-space: nowrap;
+        overflow: hidden;
         margin-top: 2px;
       }
       .zen-chip {
         background: #fff7ed;
         color: #c2410c;
         border: 1px solid #fed7aa;
-        padding: 4px 10px;
+        padding: 3px 9px;
         border-radius: 999px;
         text-decoration: none;
         font-weight: 600;
+        flex: 0 0 auto;
       }
 
       .zen-actions { display: flex; align-items: center; gap: 14px; }
@@ -220,11 +224,11 @@
       .zen-account-name {
         font-weight: 500;
         color: #dc2626;
-        font-size: 1.05rem;
+        font-size: 0.98rem;
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
-        max-width: 260px;
+        max-width: 190px;
       }
       .zen-account-sub {
         font-size: 10px;
@@ -461,6 +465,23 @@
           min-width: 0;
           right: 0;
           left: auto;
+        }
+      }
+
+      @media (max-width: 1500px) {
+        .zen-trending {
+          display: none !important;
+        }
+      }
+
+      @media (max-width: 1280px) {
+        .zen-links .nav-link {
+          margin-right: 4px;
+          font-size: 0.92rem;
+        }
+        .zen-account-name {
+          max-width: 140px;
+          font-size: 0.92rem;
         }
       }
 
