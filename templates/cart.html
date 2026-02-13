@@ -52,6 +52,13 @@
                   <div class="col-9 col-md-6">
                     <div class="fw-semibold">{{ p[1] }}</div>
                     <div class="text-muted small">Category: {{ p[2] }}</div>
+                    {% if row.selected_color or row.selected_size %}
+                    <div class="text-muted small">
+                      {% if row.selected_color %}Colour: {{ row.selected_color }}{% endif %}
+                      {% if row.selected_color and row.selected_size %} | {% endif %}
+                      {% if row.selected_size %}Size: {{ row.selected_size }}{% endif %}
+                    </div>
+                    {% endif %}
                     <div class="text-success small">In Stock</div>
                     {% if p[5] is not none and p[5]|int <= 5 %}
                       <div class="text-danger small">Low stock: {{ p[5] }} left</div>

@@ -296,21 +296,57 @@
           {% if seller %}
           <div class="text-muted small mb-2">Seller: {{ seller }}</div>
           {% endif %}
+          {% if is_jersey_product and (color_options or size_options) %}
+          <div class="text-muted small mb-2">Select your preferred colour and size below.</div>
+          {% else %}
           {% if product_color %}
           <div class="text-muted small mb-2">Colour: {{ product_color }}</div>
           {% endif %}
           {% if product_size %}
           <div class="text-muted small mb-2">Size: {{ product_size }}</div>
           {% endif %}
+          {% endif %}
           <div class="single-sub">{{ product[6] }}</div>
           </div>
           <div class="price-tag">KES {{ product[4] }}</div>
           <div class="text-muted small mb-3">Pay on delivery or add to cart for checkout.</div>
 
-          <form method="POST" action="/add_to_cart/{{ product[0] }}" class="d-flex align-items-center gap-2 mb-3">
+          <form method="POST" action="/add_to_cart/{{ product[0] }}" class="mb-3">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-            <input type="number" name="qty" value="1" min="1" class="form-control" style="width:120px;">
-            <button class="btn btn-success flex-grow-1">Add to Cart</button>
+            {% if is_jersey_product and (color_options or size_options) %}
+            <div class="row g-2 mb-2">
+              {% if color_options %}
+              <div class="col-6">
+                <label class="form-label mb-1">Colour</label>
+                <select name="selected_color" class="form-select" {% if color_options|length > 1 %}required{% endif %}>
+                  {% if color_options|length > 1 %}
+                  <option value="">Select colour</option>
+                  {% endif %}
+                  {% for option in color_options %}
+                  <option value="{{ option }}" {% if option == selected_color %}selected{% endif %}>{{ option }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              {% endif %}
+              {% if size_options %}
+              <div class="col-6">
+                <label class="form-label mb-1">Size</label>
+                <select name="selected_size" class="form-select" {% if size_options|length > 1 %}required{% endif %}>
+                  {% if size_options|length > 1 %}
+                  <option value="">Select size</option>
+                  {% endif %}
+                  {% for option in size_options %}
+                  <option value="{{ option }}" {% if option == selected_size %}selected{% endif %}>{{ option }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              {% endif %}
+            </div>
+            {% endif %}
+            <div class="d-flex align-items-center gap-2">
+              <input type="number" name="qty" value="1" min="1" class="form-control" style="width:120px;">
+              <button class="btn btn-success flex-grow-1">Add to Cart</button>
+            </div>
           </form>
           {% if product[5] is not none and product[5]|int <= 0 %}
           <form method="POST" action="/product/{{ product[0] }}/stock-alert" class="d-flex flex-wrap align-items-center gap-2 mb-3">
@@ -326,6 +362,36 @@
 
           <form method="POST" action="{{ url_for('pay_on_delivery') }}" class="form-card p-3">
             <input type="hidden" name="product_id" value="{{ product[0] }}">
+            {% if is_jersey_product and (color_options or size_options) %}
+            <div class="row g-2">
+              {% if color_options %}
+              <div class="col-6">
+                <label class="form-label">Colour</label>
+                <select name="selected_color" class="form-select" {% if color_options|length > 1 %}required{% endif %}>
+                  {% if color_options|length > 1 %}
+                  <option value="">Select colour</option>
+                  {% endif %}
+                  {% for option in color_options %}
+                  <option value="{{ option }}" {% if option == selected_color %}selected{% endif %}>{{ option }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              {% endif %}
+              {% if size_options %}
+              <div class="col-6">
+                <label class="form-label">Size</label>
+                <select name="selected_size" class="form-select" {% if size_options|length > 1 %}required{% endif %}>
+                  {% if size_options|length > 1 %}
+                  <option value="">Select size</option>
+                  {% endif %}
+                  {% for option in size_options %}
+                  <option value="{{ option }}" {% if option == selected_size %}selected{% endif %}>{{ option }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              {% endif %}
+            </div>
+            {% endif %}
             <label class="form-label">Quantity</label>
             <input type="number" name="quantity" value="1" min="1" class="form-control" required>
             <label class="form-label mt-2">Delivery Location</label>

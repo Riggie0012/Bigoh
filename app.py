@@ -3601,6 +3601,11 @@ def single(product_id):
             seller = _row_at(product, seller_index, "")
         product_color = _row_at(product, color_index, "") if color_index is not None else ""
         product_size = _row_at(product, size_index, "") if size_index is not None else ""
+        color_options = _split_variant_options(product_color)
+        size_options = _split_variant_options(product_size)
+        is_jersey_product = str(_row_at(product, 2, "") or "").strip().lower() == "jersey"
+        selected_color = color_options[0] if color_options else ""
+        selected_size = size_options[0] if size_options else ""
 
         reviews, avg_rating, review_count, has_seed, rating_breakdown = get_product_reviews(
             connection, product_id, session.get("key")
@@ -3620,6 +3625,11 @@ def single(product_id):
         seller=seller,
         product_color=product_color,
         product_size=product_size,
+        color_options=color_options,
+        size_options=size_options,
+        is_jersey_product=is_jersey_product,
+        selected_color=selected_color,
+        selected_size=selected_size,
         reviews=reviews,
         avg_rating=avg_rating,
         avg_rating_int=avg_rating_int,
@@ -5297,6 +5307,36 @@ def _parse_price(value):
         return None
 
 
+def _split_variant_options(value) -> list[str]:
+    raw = str(value or "").strip()
+    if not raw:
+        return []
+    options = []
+    seen = set()
+    for part in re.split(r"[,;\n|]+", raw):
+        cleaned = str(part or "").strip()
+        if not cleaned:
+            continue
+        key = cleaned.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        options.append(cleaned)
+    return options
+
+
+def _select_variant_option(selected_value, options) -> str:
+    selected = str(selected_value or "").strip()
+    option_list = options or []
+    if option_list:
+        if selected:
+            for option in option_list:
+                if option.lower() == selected.lower():
+                    return option
+        return option_list[0]
+    return selected
+
+
 def get_products_by_category(category_name, filters=None):
     filters = filters or {}
     connection = get_db_connection()
@@ -6189,6 +6229,9 @@ def add_to_cart(product_id):
     if qty <= 0:
         qty = 1
 
+    selected_color_input = request.form.get("selected_color", "").strip()
+    selected_size_input = request.form.get("selected_size", "").strip()
+
     product = get_product(product_id)
     if not product:
         message = "Product not found."
@@ -6209,7 +6252,22 @@ def add_to_cart(product_id):
         set_site_message(message, "danger")
         return redirect(request.referrer or url_for("home"))
 
+    option_conn = get_db_connection()
+    try:
+        color_index = table_column_index(option_conn, "products", "color")
+        size_index = table_column_index(option_conn, "products", "size")
+    finally:
+        option_conn.close()
+
+    available_colors = _split_variant_options(_row_at(product, color_index, "") if color_index is not None else "")
+    available_sizes = _split_variant_options(_row_at(product, size_index, "") if size_index is not None else "")
+    selected_color = _select_variant_option(selected_color_input, available_colors)
+    selected_size = _select_variant_option(selected_size_input, available_sizes)
+
     cart = session.get("cart", {})  # {"12": 2, "15": 1}
+    cart_options = session.get("cart_options", {})
+    if not isinstance(cart_options, dict):
+        cart_options = {}
     pid = str(product_id)
     current = int(cart.get(pid, 0))
     desired = current + qty
@@ -6224,6 +6282,11 @@ def add_to_cart(product_id):
         level = "success"
 
     session["cart"] = cart
+    if selected_color or selected_size:
+        cart_options[pid] = {"color": selected_color, "size": selected_size}
+    else:
+        cart_options.pop(pid, None)
+    session["cart_options"] = cart_options
     total_items = sum(cart.values())
     user_id = session.get("username")
     if user_id:
@@ -6262,6 +6325,9 @@ def add_to_cart(product_id):
 @app.route("/cart")
 def cart():
     cart = session.get("cart", {})
+    cart_options = session.get("cart_options", {})
+    if not isinstance(cart_options, dict):
+        cart_options = {}
     items = []
     grand_total = 0
 
@@ -6273,11 +6339,16 @@ def cart():
         price = float(product[4])  # adjust index if your price is different
         total = price * int(qty)
         grand_total += total
+        option_data = cart_options.get(str(pid), {})
+        selected_color = str((option_data or {}).get("color", "")).strip() if isinstance(option_data, dict) else ""
+        selected_size = str((option_data or {}).get("size", "")).strip() if isinstance(option_data, dict) else ""
 
         items.append({
             "product": product,
             "qty": int(qty),
-            "total": total
+            "total": total,
+            "selected_color": selected_color,
+            "selected_size": selected_size,
         })
 
     discount = 0.0
@@ -6315,13 +6386,18 @@ def update_cart(product_id):
         qty = 1
 
     cart = session.get("cart", {})
+    cart_options = session.get("cart_options", {})
+    if not isinstance(cart_options, dict):
+        cart_options = {}
     pid = str(product_id)
     current = int(cart.get(pid, 0))
 
     product = get_product(product_id)
     if not product:
         cart.pop(pid, None)
+        cart_options.pop(pid, None)
         session["cart"] = cart
+        session["cart_options"] = cart_options
         set_site_message("Product no longer exists and was removed.", "warning")
         return redirect(url_for("cart"))
 
@@ -6339,7 +6415,9 @@ def update_cart(product_id):
 
     if stock <= 0:
         cart.pop(pid, None)
+        cart_options.pop(pid, None)
         session["cart"] = cart
+        session["cart_options"] = cart_options
         set_site_message("This item is out of stock and was removed.", "danger")
         return redirect(url_for("cart"))
 
@@ -6349,10 +6427,12 @@ def update_cart(product_id):
 
     if new_qty <= 0:
         cart.pop(pid, None)
+        cart_options.pop(pid, None)
     else:
         cart[pid] = new_qty
 
     session["cart"] = cart
+    session["cart_options"] = cart_options
     user_id = session.get("username")
     if user_id:
         try:
@@ -6380,8 +6460,14 @@ def update_cart(product_id):
 @app.route("/remove_from_cart/<int:product_id>")
 def remove_from_cart(product_id):
     cart = session.get("cart", {})
-    cart.pop(str(product_id), None)
+    cart_options = session.get("cart_options", {})
+    if not isinstance(cart_options, dict):
+        cart_options = {}
+    pid = str(product_id)
+    cart.pop(pid, None)
+    cart_options.pop(pid, None)
     session["cart"] = cart
+    session["cart_options"] = cart_options
     user_id = session.get("username")
     if user_id:
         try:
@@ -6408,6 +6494,7 @@ def remove_from_cart(product_id):
 @app.route("/clear_cart")
 def clear_cart():
     session.pop("cart", None)
+    session.pop("cart_options", None)
     user_id = session.get("username")
     if user_id:
         try:
@@ -6455,13 +6542,25 @@ def pay_on_delivery():
 
     # 3) Start from cart in session
     cart = session.get("cart", {}).copy()
+    cart_options = session.get("cart_options", {})
+    if not isinstance(cart_options, dict):
+        cart_options = {}
+    else:
+        cart_options = cart_options.copy()
 
     # If coming from single.html, include that product too
     product_id = request.form.get("product_id")
-    quantity = int(request.form.get("quantity", 1))
-    if product_id:
-        pid = str(product_id)
-        cart[pid] = cart.get(pid, 0) + quantity
+    try:
+        quantity = int(request.form.get("quantity", 1))
+    except (TypeError, ValueError):
+        quantity = 1
+    if quantity <= 0:
+        quantity = 1
+    single_pid = str(product_id).strip() if product_id else ""
+    single_selected_color = request.form.get("selected_color", "").strip()
+    single_selected_size = request.form.get("selected_size", "").strip()
+    if single_pid:
+        cart[single_pid] = cart.get(single_pid, 0) + quantity
 
     if not cart:
         return redirect(request.referrer or url_for("home"))
@@ -6483,6 +6582,8 @@ def pay_on_delivery():
     products = cur.fetchall()
 
     product_map = {str(p[0]): p for p in products}  # p[0] = product_id
+    color_index = table_column_index(conn, "products", "color")
+    size_index = table_column_index(conn, "products", "size")
 
     # Validate stock before creating order
     updated_cart = cart.copy()
@@ -6491,14 +6592,29 @@ def pay_on_delivery():
         p = product_map.get(pid)
         if not p:
             updated_cart.pop(pid, None)
+            cart_options.pop(pid, None)
             stock_issue = True
             continue
+        available_colors = _split_variant_options(_row_at(p, color_index, "") if color_index is not None else "")
+        available_sizes = _split_variant_options(_row_at(p, size_index, "") if size_index is not None else "")
+        saved_option = cart_options.get(pid, {}) if isinstance(cart_options.get(pid, {}), dict) else {}
+        if single_pid and pid == single_pid:
+            chosen_color = _select_variant_option(single_selected_color, available_colors)
+            chosen_size = _select_variant_option(single_selected_size, available_sizes)
+        else:
+            chosen_color = _select_variant_option(saved_option.get("color", ""), available_colors)
+            chosen_size = _select_variant_option(saved_option.get("size", ""), available_sizes)
+        if chosen_color or chosen_size:
+            cart_options[pid] = {"color": chosen_color, "size": chosen_size}
+        else:
+            cart_options.pop(pid, None)
         try:
             stock = int(p[5]) if p[5] is not None else 0
         except (ValueError, TypeError):
             stock = 0
         if stock <= 0:
             updated_cart.pop(pid, None)
+            cart_options.pop(pid, None)
             stock_issue = True
         elif int(qty) > stock:
             updated_cart[pid] = stock
@@ -6506,6 +6622,7 @@ def pay_on_delivery():
 
     if stock_issue:
         session["cart"] = updated_cart
+        session["cart_options"] = cart_options
         set_site_message("Some items are out of stock or limited. Please review your cart.", "warning")
         cur.close()
         conn.close()
@@ -6521,6 +6638,15 @@ def pay_on_delivery():
             continue
 
         name = p[1]                 # product name index
+        option_data = cart_options.get(pid, {}) if isinstance(cart_options.get(pid, {}), dict) else {}
+        selected_color = str(option_data.get("color", "")).strip()
+        selected_size = str(option_data.get("size", "")).strip()
+        variant_parts = []
+        if selected_color:
+            variant_parts.append(f"Colour: {selected_color}")
+        if selected_size:
+            variant_parts.append(f"Size: {selected_size}")
+        display_name = f"{name} ({', '.join(variant_parts)})" if variant_parts else name
         unit_price = float(p[4])    # price index
         qty = int(qty)
         line_total = unit_price * qty
@@ -6528,7 +6654,9 @@ def pay_on_delivery():
 
         order_items.append({
             "product_id": int(pid),
-            "product_name": name,
+            "product_name": display_name,
+            "selected_color": selected_color,
+            "selected_size": selected_size,
             "unit_price": unit_price,
             "quantity": qty,
             "line_total": line_total
@@ -6640,6 +6768,7 @@ def pay_on_delivery():
 
     # 8) Clear cart (cannot detect WhatsApp send success; clearing happens at redirect time)
     session.pop("cart", None)
+    session.pop("cart_options", None)
 
     wa_url = f"https://wa.me/{WHATSAPP_NUMBER}?text={quote(text)}"
     session["last_order_id"] = order_id
