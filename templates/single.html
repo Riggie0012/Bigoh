@@ -296,6 +296,12 @@
           {% if seller %}
           <div class="text-muted small mb-2">Seller: {{ seller }}</div>
           {% endif %}
+          {% if product_color %}
+          <div class="text-muted small mb-2">Colour: {{ product_color }}</div>
+          {% endif %}
+          {% if product_size %}
+          <div class="text-muted small mb-2">Size: {{ product_size }}</div>
+          {% endif %}
           <div class="single-sub">{{ product[6] }}</div>
           </div>
           <div class="price-tag">KES {{ product[4] }}</div>

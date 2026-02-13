@@ -2371,6 +2371,28 @@ def table_has_column(conn, table: str, column: str) -> bool:
         return False
 
 
+def table_column_index(conn, table: str, column: str) -> Optional[int]:
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT ORDINAL_POSITION
+                FROM INFORMATION_SCHEMA.COLUMNS
+                WHERE TABLE_SCHEMA = DATABASE()
+                  AND TABLE_NAME = %s
+                  AND COLUMN_NAME = %s
+                """,
+                (table, column),
+            )
+            row = cur.fetchone()
+            ordinal_position = int(_row_at(row, 0, 0) or 0)
+            if ordinal_position <= 0:
+                return None
+            return ordinal_position - 1
+    except Exception:
+        return None
+
+
 def products_has_seller(conn=None) -> bool:
     cache_key = _schema_cache_key("products", "seller")
     cached = app.config.get(cache_key)
@@ -2407,6 +2429,24 @@ def products_has_color(conn=None) -> bool:
             conn.close()
 
 
+def products_has_size(conn=None) -> bool:
+    cache_key = _schema_cache_key("products", "size")
+    cached = app.config.get(cache_key)
+    if cached is not None:
+        return cached
+    owns_conn = False
+    if conn is None:
+        conn = get_db_connection()
+        owns_conn = True
+    try:
+        has_col = table_has_column(conn, "products", "size")
+        app.config[cache_key] = has_col
+        return has_col
+    finally:
+        if owns_conn:
+            conn.close()
+
+
 def ensure_products_schema(conn) -> bool:
     try:
         with conn.cursor() as cur:
@@ -2414,9 +2454,12 @@ def ensure_products_schema(conn) -> bool:
                 cur.execute("ALTER TABLE products ADD COLUMN seller VARCHAR(120) NULL")
             if not products_has_color(conn):
                 cur.execute("ALTER TABLE products ADD COLUMN color VARCHAR(80) NULL")
+            if not products_has_size(conn):
+                cur.execute("ALTER TABLE products ADD COLUMN size VARCHAR(80) NULL")
         conn.commit()
         app.config[_schema_cache_key("products", "seller")] = True
         app.config[_schema_cache_key("products", "color")] = True
+        app.config[_schema_cache_key("products", "size")] = True
         return True
     except Exception:
         return False
@@ -3551,8 +3594,13 @@ def single(product_id):
             return redirect(url_for("home"))
 
         seller = ""
-        if products_has_seller(connection):
-            seller = _row_at(product, 9, "")
+        seller_index = table_column_index(connection, "products", "seller")
+        color_index = table_column_index(connection, "products", "color")
+        size_index = table_column_index(connection, "products", "size")
+        if seller_index is not None:
+            seller = _row_at(product, seller_index, "")
+        product_color = _row_at(product, color_index, "") if color_index is not None else ""
+        product_size = _row_at(product, size_index, "") if size_index is not None else ""
 
         reviews, avg_rating, review_count, has_seed, rating_breakdown = get_product_reviews(
             connection, product_id, session.get("key")
@@ -3570,6 +3618,8 @@ def single(product_id):
         "single.html",
         product=product,
         seller=seller,
+        product_color=product_color,
+        product_size=product_size,
         reviews=reviews,
         avg_rating=avg_rating,
         avg_rating_int=avg_rating_int,
@@ -5262,6 +5312,7 @@ def get_products_by_category(category_name, filters=None):
         category_keys = [name.lower() for name in category_names]
         brand = filters.get("brand", "")
         color = filters.get("color", "")
+        size = filters.get("size", "")
         min_price = _parse_price(filters.get("min_price"))
         max_price = _parse_price(filters.get("max_price"))
         availability = filters.get("availability", "")
@@ -5279,6 +5330,9 @@ def get_products_by_category(category_name, filters=None):
         if color:
             where_parts.append("color = %s")
             params.append(color)
+        if size and products_has_size(connection):
+            where_parts.append("size = %s")
+            params.append(size)
         if min_price is not None:
             where_parts.append("price >= %s")
             params.append(min_price)
@@ -5388,13 +5442,35 @@ def category_jersey():
     filters = {
         "brand": request.args.get("brand", "").strip(),
         "color": request.args.get("color", "").strip(),
+        "size": request.args.get("size", "").strip(),
         "min_price": request.args.get("min_price", "").strip(),
         "max_price": request.args.get("max_price", "").strip(),
         "availability": request.args.get("availability", "").strip(),
     }
     products, brands, colors = get_products_by_category("Jersey", filters)
+    sizes = []
     conn = get_db_connection()
     try:
+        color_index = table_column_index(conn, "products", "color")
+        size_index = table_column_index(conn, "products", "size")
+        if products_has_size(conn):
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT DISTINCT size
+                    FROM products
+                    WHERE LOWER(category) = %s
+                      AND (is_hidden IS NULL OR is_hidden = 0)
+                      AND size IS NOT NULL
+                      AND size <> ''
+                    ORDER BY size
+                    """,
+                    ("jersey",),
+                )
+                for row in cur.fetchall() or []:
+                    raw_size = str(_row_at(row, 0, "") or "").strip()
+                    if raw_size:
+                        sizes.append(raw_size)
         ratings = get_ratings_for_products(conn, [_row_at(row, 0) for row in products])
     finally:
         conn.close()
@@ -5404,6 +5480,9 @@ def category_jersey():
         ratings=ratings,
         brands=brands,
         colors=colors,
+        sizes=sizes,
+        color_index=color_index,
+        size_index=size_index,
         filters=filters,
     )
 
@@ -6582,6 +6661,7 @@ def upload():
         brand = request.form.get("brand", "").strip()
         seller = request.form.get("seller", "").strip()
         color = request.form.get("color", "").strip()
+        size = request.form.get("size", "").strip()
         price = request.form.get("price", "").strip()
         stock = request.form.get("stock", "0").strip()
         description = request.form.get("description", "").strip()
@@ -6663,26 +6743,27 @@ def upload():
         try:
             ensure_products_schema(connection)
             with connection.cursor() as cursor:
-                if products_has_seller(connection):
-                    sql = """
-                        INSERT INTO products
-                        (product_name, category, brand, seller, color, price, stock, description, image_url)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-                    """
-                    cursor.execute(
-                        sql,
-                        (product_name, category, brand, seller, color, price, stock, description, image_url),
-                    )
-                else:
-                    sql = """
-                        INSERT INTO products
-                        (product_name, category, brand, color, price, stock, description, image_url)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-                    """
-                    cursor.execute(
-                        sql,
-                        (product_name, category, brand, color, price, stock, description, image_url),
-                    )
+                has_seller = products_has_seller(connection)
+                has_color = products_has_color(connection)
+                has_size = products_has_size(connection)
+
+                columns = ["product_name", "category", "brand"]
+                values = [product_name, category, brand]
+                if has_seller:
+                    columns.append("seller")
+                    values.append(seller)
+                if has_color:
+                    columns.append("color")
+                    values.append(color)
+                if has_size:
+                    columns.append("size")
+                    values.append(size)
+                columns.extend(["price", "stock", "description", "image_url"])
+                values.extend([price, stock, description, image_url])
+
+                placeholders = ", ".join(["%s"] * len(columns))
+                sql = f"INSERT INTO products ({', '.join(columns)}) VALUES ({placeholders})"
+                cursor.execute(sql, tuple(values))
                 connection.commit()
         finally:
             connection.close()
@@ -7786,13 +7867,18 @@ def admin_products():
             cur.execute("SELECT * FROM products ORDER BY product_id DESC")
             products = cur.fetchall() or []
         has_seller = products_has_seller(conn)
+        seller_index = table_column_index(conn, "products", "seller")
+        color_index = table_column_index(conn, "products", "color")
+        size_index = table_column_index(conn, "products", "size")
     finally:
         conn.close()
     return render_template(
         "admin_products.html",
         products=products,
         products_has_seller=has_seller,
-        seller_index=9,
+        seller_index=seller_index,
+        color_index=color_index,
+        size_index=size_index,
     )
 
 
@@ -7802,19 +7888,28 @@ def admin_edit_product(product_id):
     product = None
     categories_list = []
     category_warning = ""
+    has_seller = False
     product_seller = ""
     product_color = ""
+    product_size = ""
     conn = get_db_connection()
     try:
-        has_seller = ensure_products_schema(conn)
+        ensure_products_schema(conn)
+        has_seller = products_has_seller(conn)
+        has_color = products_has_color(conn)
+        has_size = products_has_size(conn)
+        seller_index = table_column_index(conn, "products", "seller")
+        color_index = table_column_index(conn, "products", "color")
+        size_index = table_column_index(conn, "products", "size")
         categories_list = get_managed_categories()
         with conn.cursor() as cur:
             cur.execute("SELECT * FROM products WHERE product_id=%s", (product_id,))
             product = cur.fetchone()
             if not product:
                 return redirect(url_for("admin_products"))
-            product_seller = _row_at(product, 9, "") if has_seller else ""
-            product_color = _row_at(product, 10, "") if products_has_color(conn) else ""
+            product_seller = _row_at(product, seller_index, "") if seller_index is not None else ""
+            product_color = _row_at(product, color_index, "") if color_index is not None else ""
+            product_size = _row_at(product, size_index, "") if size_index is not None else ""
             existing_category = str(_row_at(product, 2, "") or "").strip()
             if existing_category and not coerce_allowed_category(existing_category, categories_list):
                 category_warning = (
@@ -7829,6 +7924,7 @@ def admin_edit_product(product_id):
                 brand = request.form.get("brand", "").strip()
                 seller = request.form.get("seller", "").strip()
                 color = request.form.get("color", "").strip()
+                size = request.form.get("size", "").strip()
                 price = request.form.get("price", "").strip()
                 stock = request.form.get("stock", "0").strip()
                 description = request.form.get("description", "").strip()
@@ -7840,6 +7936,7 @@ def admin_edit_product(product_id):
                         product=product,
                         product_seller=product_seller,
                         product_color=product_color,
+                        product_size=product_size,
                         products_has_seller=has_seller,
                         category_warning=category_warning,
                         categories=categories_list,
@@ -7852,6 +7949,7 @@ def admin_edit_product(product_id):
                         product=product,
                         product_seller=product_seller,
                         product_color=product_color,
+                        product_size=product_size,
                         products_has_seller=has_seller,
                         category_warning=category_warning,
                         categories=categories_list,
@@ -7881,24 +7979,22 @@ def admin_edit_product(product_id):
                             compress_product_image(save_path)
                             image_url = f"images/{final_name}"
 
-                if has_seller and products_has_seller(conn):
-                    cur.execute(
-                        """
-                        UPDATE products
-                        SET product_name=%s, category=%s, brand=%s, seller=%s, color=%s, price=%s, stock=%s, description=%s, image_url=%s
-                        WHERE product_id=%s
-                        """,
-                        (product_name, category, brand, seller, color, price, stock, description, image_url, product_id),
-                    )
-                else:
-                    cur.execute(
-                        """
-                        UPDATE products
-                        SET product_name=%s, category=%s, brand=%s, color=%s, price=%s, stock=%s, description=%s, image_url=%s
-                        WHERE product_id=%s
-                        """,
-                        (product_name, category, brand, color, price, stock, description, image_url, product_id),
-                    )
+                set_parts = ["product_name=%s", "category=%s", "brand=%s"]
+                values = [product_name, category, brand]
+                if has_seller:
+                    set_parts.append("seller=%s")
+                    values.append(seller)
+                if has_color:
+                    set_parts.append("color=%s")
+                    values.append(color)
+                if has_size:
+                    set_parts.append("size=%s")
+                    values.append(size)
+                set_parts.extend(["price=%s", "stock=%s", "description=%s", "image_url=%s"])
+                values.extend([price, stock, description, image_url, product_id])
+
+                sql = f"UPDATE products SET {', '.join(set_parts)} WHERE product_id=%s"
+                cur.execute(sql, tuple(values))
                 conn.commit()
                 try:
                     new_stock = int(stock or 0)
@@ -7925,6 +8021,7 @@ def admin_edit_product(product_id):
         product=product,
         product_seller=product_seller,
         product_color=product_color,
+        product_size=product_size,
         products_has_seller=has_seller,
         category_warning=category_warning,
         categories=categories_list,

@@ -23,6 +23,11 @@
       color: #16a34a;
       margin: 6px 0;
     }
+    .variant-meta {
+      font-size: 12px;
+      color: #475569;
+      margin-bottom: 6px;
+    }
     .product-grid-card .btn-outline-primary {
       border-radius: 999px;
       border-color: #0f172a;
@@ -56,11 +61,20 @@
         </select>
       </div>
       <div class="col-sm-4 col-md-2">
-        <label class="form-label small text-muted">Color</label>
+        <label class="form-label small text-muted">Colour</label>
         <select name="color" class="form-select">
           <option value="">All colors</option>
           {% for c in colors %}
           <option value="{{ c }}" {% if filters.color == c %}selected{% endif %}>{{ c }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-sm-4 col-md-2">
+        <label class="form-label small text-muted">Size</label>
+        <select name="size" class="form-select">
+          <option value="">All sizes</option>
+          {% for s in sizes %}
+          <option value="{{ s }}" {% if filters.size == s %}selected{% endif %}>{{ s }}</option>
           {% endfor %}
         </select>
       </div>
@@ -96,6 +110,15 @@
             <img src="{{ image_url(item[7]) }}" alt="{{ item[1] }}" loading="lazy" decoding="async">
             <div class="p-3">
               <div class="fw-semibold">{{ item[1] }}</div>
+              {% set item_color = item[color_index] if color_index is not none and item|length > color_index else '' %}
+              {% set item_size = item[size_index] if size_index is not none and item|length > size_index else '' %}
+              {% if item_color or item_size %}
+              <div class="variant-meta">
+                {% if item_color %}Colour: {{ item_color }}{% endif %}
+                {% if item_color and item_size %} | {% endif %}
+                {% if item_size %}Size: {{ item_size }}{% endif %}
+              </div>
+              {% endif %}
               <div class="text-danger mb-1">KES {{ item[4] }}</div>
               <div class="quality-check"><i class="fa-solid fa-circle-check"></i> Quality checked</div>
               {% set rating = ratings.get(item[0]) if ratings is defined else None %}
