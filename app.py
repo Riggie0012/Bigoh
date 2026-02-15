@@ -1,4 +1,3 @@
--- Active: 1770827640571@@switchyard.proxy.rlwy.net@55655@railway
 from flask import *
 from werkzeug.exceptions import HTTPException
 from urllib.parse import quote, urlparse, parse_qs
