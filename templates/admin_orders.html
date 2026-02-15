@@ -266,8 +266,24 @@
           <h3 class="mb-1">Orders</h3>
           <div class="text-muted">Track payments, locations, and fulfillment.</div>
         </div>
-        <div class="pill">{{ orders|length if orders else 0 }} orders</div>
+        <div class="d-flex align-items-center gap-2">
+          <form method="POST" action="{{ url_for('admin_delete_completed_orders') }}" onsubmit="return confirm('Delete all COMPLETED orders and their items? This cannot be undone.');">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="btn btn-sm btn-outline-danger" type="submit">Delete Completed</button>
+          </form>
+          <div class="pill">{{ orders|length if orders else 0 }} orders</div>
+        </div>
       </div>
+
+      {% if cleanup_status == "ok" %}
+      <div class="alert alert-success py-2 px-3 mb-3">
+        Deleted {{ cleanup_deleted_orders }} completed order(s), {{ cleanup_deleted_items }} item row(s), and {{ cleanup_deleted_reviews }} review reminder row(s).
+      </div>
+      {% elif cleanup_status == "error" %}
+      <div class="alert alert-danger py-2 px-3 mb-3">
+        Could not delete completed orders. Check logs and try again.
+      </div>
+      {% endif %}
 
       <section class="panel">
         <div class="table-responsive">

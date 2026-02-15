@@ -1,3 +1,4 @@
+-- Active: 1770827640571@@switchyard.proxy.rlwy.net@55655@railway
 from flask import *
 from werkzeug.exceptions import HTTPException
 from urllib.parse import quote, urlparse, parse_qs
@@ -8170,9 +8171,96 @@ def admin_delete_product(product_id):
     return redirect(url_for("admin_products"))
 
 
+@app.route("/admin/orders/delete-completed", methods=["POST"])
+@admin_required
+def admin_delete_completed_orders():
+    deleted_orders = 0
+    deleted_order_items = 0
+    deleted_review_requests = 0
+    had_error = False
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cur:
+            has_review_table = False
+            try:
+                cur.execute(
+                    """
+                    SELECT COUNT(*)
+                    FROM INFORMATION_SCHEMA.TABLES
+                    WHERE TABLE_SCHEMA = DATABASE()
+                      AND TABLE_NAME = 'order_review_requests'
+                    """
+                )
+                has_review_table = bool(_row_at(cur.fetchone(), 0, 0) or 0)
+            except Exception:
+                has_review_table = False
+
+            if has_review_table:
+                try:
+                    cur.execute(
+                        """
+                        DELETE FROM order_review_requests
+                        WHERE order_id IN (
+                            SELECT order_id
+                            FROM orders
+                            WHERE status = %s
+                        )
+                        """,
+                        ("COMPLETED",),
+                    )
+                    deleted_review_requests = int(cur.rowcount or 0)
+                except Exception:
+                    deleted_review_requests = 0
+
+            cur.execute(
+                """
+                DELETE FROM order_items
+                WHERE order_id IN (
+                    SELECT order_id
+                    FROM orders
+                    WHERE status = %s
+                )
+                """,
+                ("COMPLETED",),
+            )
+            deleted_order_items = int(cur.rowcount or 0)
+
+            cur.execute("DELETE FROM orders WHERE status = %s", ("COMPLETED",))
+            deleted_orders = int(cur.rowcount or 0)
+        conn.commit()
+    except Exception:
+        had_error = True
+        conn.rollback()
+        app.logger.exception("Failed to delete completed orders.")
+    finally:
+        conn.close()
+
+    return redirect(
+        url_for(
+            "admin_orders",
+            cleanup_status="error" if had_error else "ok",
+            cleanup_deleted_orders=deleted_orders,
+            cleanup_deleted_items=deleted_order_items,
+            cleanup_deleted_reviews=deleted_review_requests,
+        )
+    )
+
+
 @app.route("/admin/orders")
 @admin_required
 def admin_orders():
+    cleanup_status = (request.args.get("cleanup_status") or "").strip().lower()
+
+    def _int_arg(name: str) -> int:
+        try:
+            return max(0, int(request.args.get(name, "0") or 0))
+        except Exception:
+            return 0
+
+    cleanup_deleted_orders = _int_arg("cleanup_deleted_orders")
+    cleanup_deleted_items = _int_arg("cleanup_deleted_items")
+    cleanup_deleted_reviews = _int_arg("cleanup_deleted_reviews")
+
     conn = get_db_connection()
     try:
         with conn.cursor() as cur:
@@ -8197,7 +8285,15 @@ def admin_orders():
             orders = cur.fetchall() or []
     finally:
         conn.close()
-    return render_template("admin_orders.html", orders=orders, has_reference=orders_has_reference())
+    return render_template(
+        "admin_orders.html",
+        orders=orders,
+        has_reference=orders_has_reference(),
+        cleanup_status=cleanup_status,
+        cleanup_deleted_orders=cleanup_deleted_orders,
+        cleanup_deleted_items=cleanup_deleted_items,
+        cleanup_deleted_reviews=cleanup_deleted_reviews,
+    )
 
 
 @app.route("/admin/orders/<int:order_id>")
