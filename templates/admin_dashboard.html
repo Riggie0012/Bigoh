@@ -853,11 +853,13 @@
         return;
       }
 
+      const payload = new FormData(form);
+      payload.set("status", nextStatus);
       select.disabled = true;
       try {
         const res = await fetch(form.action, {
           method: "POST",
-          body: new FormData(form),
+          body: payload,
           credentials: "same-origin",
           headers: {
             "X-Requested-With": "XMLHttpRequest",

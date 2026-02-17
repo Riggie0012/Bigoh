@@ -403,6 +403,8 @@
 
       const submitButton = form.querySelector("button[type='submit']");
       const originalBtnLabel = submitButton ? submitButton.textContent : "";
+      const payload = new FormData(form);
+      payload.set("status", nextStatus);
       select.disabled = true;
       if (submitButton) {
         submitButton.disabled = true;
@@ -412,7 +414,7 @@
       try {
         const res = await fetch(form.action, {
           method: "POST",
-          body: new FormData(form),
+          body: payload,
           credentials: "same-origin",
           headers: {
             "X-Requested-With": "XMLHttpRequest",
