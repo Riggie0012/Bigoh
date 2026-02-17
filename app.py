@@ -7917,42 +7917,63 @@ def admin_update_order_status(order_id):
 
     conn = get_db_connection()
     try:
-        with conn.cursor() as cur:
-            ensure_orders_delivery_columns(conn)
-            cur.execute("SELECT status, user_id FROM orders WHERE order_id=%s", (order_id,))
-            row = cur.fetchone()
-            if not row:
-                message = "Order not found."
-                if wants_json:
-                    return jsonify(ok=False, message=message, level="warning"), 404
-                set_site_message(message, "warning")
-                return redirect(request.referrer or url_for("admin_dashboard"))
-            prev_status = str(_row_at(row, 0, "") or "").upper()
-            user_id = _row_at(row, 1, None)
-            if status == "COMPLETED" and prev_status not in {"DELIVERED", "COMPLETED"}:
-                message = "For pay-after-delivery orders, mark this order as DELIVERED before COMPLETED."
-                if wants_json:
-                    return jsonify(ok=False, message=message, level="warning"), 400
-                set_site_message(message, "warning")
-                return redirect(request.referrer or url_for("admin_dashboard"))
-            cur.execute(
-                "UPDATE orders SET status=%s, status_updated_at=NOW() WHERE order_id=%s",
-                (status, order_id),
-            )
-            if user_id and prev_status != status and WHATSAPP_STATUS_UPDATES_ENABLED:
-                cur.execute("SELECT phone, username FROM users WHERE id=%s", (user_id,))
-                phone_row = cur.fetchone()
-                user_phone = _row_at(phone_row, 0, "")
-                user_name = _row_at(phone_row, 1, "") or "Customer"
-                receipt_link = url_for("order_receipt", order_id=order_id, _external=True)
-                message = _build_status_message(status, order_id, user_name, receipt_link)
-                _send_whatsapp_message(user_phone, message)
-            if status == "DELIVERED" and prev_status != "DELIVERED":
-                cur.execute(
-                    "UPDATE orders SET delivered_at=NOW() WHERE order_id=%s",
-                    (order_id,),
-                )
-        conn.commit()
+        try:
+            with conn.cursor() as cur:
+                # Best effort migration; do not depend on ALTER privileges for status updates.
+                ensure_orders_delivery_columns(conn)
+                has_status_updated = table_has_column(conn, "orders", "status_updated_at")
+                has_delivered_at = table_has_column(conn, "orders", "delivered_at")
+
+                cur.execute("SELECT status, user_id FROM orders WHERE order_id=%s", (order_id,))
+                row = cur.fetchone()
+                if not row:
+                    message = "Order not found."
+                    if wants_json:
+                        return jsonify(ok=False, message=message, level="warning"), 404
+                    set_site_message(message, "warning")
+                    return redirect(request.referrer or url_for("admin_dashboard"))
+                prev_status = str(_row_at(row, 0, "") or "").upper()
+                user_id = _row_at(row, 1, None)
+                if status == "COMPLETED" and prev_status not in {"DELIVERED", "COMPLETED"}:
+                    message = "For pay-after-delivery orders, mark this order as DELIVERED before COMPLETED."
+                    if wants_json:
+                        return jsonify(ok=False, message=message, level="warning"), 400
+                    set_site_message(message, "warning")
+                    return redirect(request.referrer or url_for("admin_dashboard"))
+
+                update_sql = "UPDATE orders SET status=%s"
+                if has_status_updated:
+                    update_sql += ", status_updated_at=NOW()"
+                update_sql += " WHERE order_id=%s"
+                cur.execute(update_sql, (status, order_id))
+
+                if user_id and prev_status != status and WHATSAPP_STATUS_UPDATES_ENABLED:
+                    cur.execute("SELECT phone, username FROM users WHERE id=%s", (user_id,))
+                    phone_row = cur.fetchone()
+                    user_phone = _row_at(phone_row, 0, "")
+                    user_name = _row_at(phone_row, 1, "") or "Customer"
+                    receipt_link = url_for("order_receipt", order_id=order_id, _external=True)
+                    message = _build_status_message(status, order_id, user_name, receipt_link)
+                    _send_whatsapp_message(user_phone, message)
+                if status == "DELIVERED" and prev_status != "DELIVERED" and has_delivered_at:
+                    cur.execute(
+                        "UPDATE orders SET delivered_at=NOW() WHERE order_id=%s",
+                        (order_id,),
+                    )
+            conn.commit()
+        except Exception as exc:
+            conn.rollback()
+            app.logger.exception("Failed updating order status for order_id=%s status=%s", order_id, status)
+            detail = str(exc).lower()
+            message = "Could not update order status right now."
+            if "status_updated_at" in detail or "delivered_at" in detail:
+                message = "Order status columns are missing in the database. Run the latest schema migration."
+            elif "incorrect enum value" in detail or "data truncated for column 'status'" in detail:
+                message = "Database does not allow this status value yet. Update the orders.status column allowed values."
+            if wants_json:
+                return jsonify(ok=False, message=message, level="warning"), 500
+            set_site_message(message, "warning")
+            return redirect(request.referrer or url_for("admin_dashboard"))
     finally:
         conn.close()
 
