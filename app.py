@@ -1,4 +1,4 @@
-from flask import 
+from flask import *
 from werkzeug.exceptions import HTTPException
 from urllib.parse import quote, urlparse, parse_qs
 import re
