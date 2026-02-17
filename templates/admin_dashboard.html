@@ -516,6 +516,11 @@
         Dashboard data error: {{ error }}
       </div>
       {% endif %}
+      {% if site_message %}
+      <div class="alert alert-{{ site_message_level }} py-2 px-3 mb-3">
+        {{ site_message }}
+      </div>
+      {% endif %}
 
       <section class="stat-grid">
         <div class="stat-card accent-orange">
@@ -820,12 +825,75 @@
       });
     });
 
+    const showStatusToast = (message, level = "warning") => {
+      if (!message) return;
+      if (typeof window.showCartToast === "function") {
+        const toastLevel = level === "error" ? "danger" : level;
+        window.showCartToast(message, toastLevel);
+        return;
+      }
+      window.alert(message);
+    };
+
+    const applyBadgeStatus = (form, status) => {
+      const row = form.closest("tr");
+      if (!row) return;
+      const badge = row.querySelector(".badge-status");
+      if (!badge) return;
+      badge.textContent = status;
+      badge.className = `badge-status status-${status}`;
+    };
+
+    const submitStatusForm = async (form, select) => {
+      if (!form || !select) return;
+      const previousStatus = select.dataset.prevValue || select.value;
+      const nextStatus = select.value;
+      if (!nextStatus || nextStatus === previousStatus) {
+        select.dataset.prevValue = nextStatus;
+        return;
+      }
+
+      select.disabled = true;
+      try {
+        const res = await fetch(form.action, {
+          method: "POST",
+          body: new FormData(form),
+          credentials: "same-origin",
+          headers: {
+            "X-Requested-With": "XMLHttpRequest",
+            "Accept": "application/json"
+          }
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || data.ok === false) {
+          throw new Error(data.message || "Unable to update order status.");
+        }
+        const appliedStatus = String(data.new_status || nextStatus).toUpperCase();
+        select.value = appliedStatus;
+        select.dataset.prevValue = appliedStatus;
+        applyBadgeStatus(form, appliedStatus);
+        showStatusToast(data.message || "Order status updated.", "success");
+      } catch (err) {
+        select.value = previousStatus;
+        showStatusToast(err.message || "Unable to update order status.", "warning");
+      } finally {
+        select.disabled = false;
+      }
+    };
+
     document.querySelectorAll(".js-status-select").forEach((select) => {
+      select.dataset.prevValue = select.value;
       select.addEventListener("change", () => {
         const form = select.closest("form");
-        if (form) {
-          form.submit();
-        }
+        submitStatusForm(form, select);
+      });
+    });
+
+    document.querySelectorAll(".js-status-form").forEach((form) => {
+      form.addEventListener("submit", (event) => {
+        event.preventDefault();
+        const select = form.querySelector(".js-status-select");
+        submitStatusForm(form, select);
       });
     });
   </script>

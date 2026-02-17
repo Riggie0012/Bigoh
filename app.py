@@ -7902,9 +7902,17 @@ def admin_sponsored_products():
 @app.route("/admin/order/<int:order_id>/status", methods=["POST"])
 @admin_required
 def admin_update_order_status(order_id):
+    wants_json = (
+        request.headers.get("X-Requested-With") == "XMLHttpRequest"
+        or "application/json" in request.headers.get("Accept", "")
+    )
     status = request.form.get("status", "").strip().upper()
     allowed = set(ORDER_STATUS_SEQUENCE)
     if status not in allowed:
+        message = "Invalid order status."
+        if wants_json:
+            return jsonify(ok=False, message=message, level="warning"), 400
+        set_site_message(message, "warning")
         return redirect(request.referrer or url_for("admin_dashboard"))
 
     conn = get_db_connection()
@@ -7913,13 +7921,19 @@ def admin_update_order_status(order_id):
             ensure_orders_delivery_columns(conn)
             cur.execute("SELECT status, user_id FROM orders WHERE order_id=%s", (order_id,))
             row = cur.fetchone()
+            if not row:
+                message = "Order not found."
+                if wants_json:
+                    return jsonify(ok=False, message=message, level="warning"), 404
+                set_site_message(message, "warning")
+                return redirect(request.referrer or url_for("admin_dashboard"))
             prev_status = str(_row_at(row, 0, "") or "").upper()
             user_id = _row_at(row, 1, None)
             if status == "COMPLETED" and prev_status not in {"DELIVERED", "COMPLETED"}:
-                set_site_message(
-                    "For pay-after-delivery orders, mark this order as DELIVERED before COMPLETED.",
-                    "warning",
-                )
+                message = "For pay-after-delivery orders, mark this order as DELIVERED before COMPLETED."
+                if wants_json:
+                    return jsonify(ok=False, message=message, level="warning"), 400
+                set_site_message(message, "warning")
                 return redirect(request.referrer or url_for("admin_dashboard"))
             cur.execute(
                 "UPDATE orders SET status=%s, status_updated_at=NOW() WHERE order_id=%s",
@@ -7942,6 +7956,10 @@ def admin_update_order_status(order_id):
     finally:
         conn.close()
 
+    message = f"Order #{order_id} updated to {status}."
+    if wants_json:
+        return jsonify(ok=True, order_id=order_id, new_status=status, message=message)
+    set_site_message(message, "success")
     return redirect(request.referrer or url_for("admin_dashboard"))
 
 

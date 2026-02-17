@@ -284,6 +284,11 @@
         Could not delete completed orders. Check logs and try again.
       </div>
       {% endif %}
+      {% if site_message %}
+      <div class="alert alert-{{ site_message_level }} py-2 px-3 mb-3">
+        {{ site_message }}
+      </div>
+      {% endif %}
 
       <section class="panel">
         <div class="table-responsive">
@@ -320,9 +325,9 @@
                     <a href="/admin/orders/{{ o[0] }}" class="btn btn-sm btn-outline-light view-btn">View</a>
                   </td>
                   <td class="cell-update">
-                    <form method="POST" action="{{ url_for('admin_update_order_status', order_id=o[0]) }}" class="d-flex gap-2 update-form">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                      <select name="status" class="form-select form-select-sm admin-select update-select">
+                    <form method="POST" action="{{ url_for('admin_update_order_status', order_id=o[0]) }}" class="d-flex gap-2 update-form js-status-form">
+           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                      <select name="status" class="form-select form-select-sm admin-select update-select js-status-select">
                         {% for s in ["PENDING", "PROCESSING", "DELIVERED", "COMPLETED", "CANCELLED"] %}
                           <option value="{{ s }}" {% if o[6] == s %}selected{% endif %}>{{ s }}</option>
                         {% endfor %}
@@ -343,9 +348,9 @@
                     <a href="/admin/orders/{{ o[0] }}" class="btn btn-sm btn-outline-light view-btn">View</a>
                   </td>
                   <td class="cell-update">
-                    <form method="POST" action="{{ url_for('admin_update_order_status', order_id=o[0]) }}" class="d-flex gap-2 update-form">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                      <select name="status" class="form-select form-select-sm admin-select update-select">
+                    <form method="POST" action="{{ url_for('admin_update_order_status', order_id=o[0]) }}" class="d-flex gap-2 update-form js-status-form">
+           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                      <select name="status" class="form-select form-select-sm admin-select update-select js-status-select">
                         {% for s in ["PENDING", "PROCESSING", "DELIVERED", "COMPLETED", "CANCELLED"] %}
                           <option value="{{ s }}" {% if o[5] == s %}selected{% endif %}>{{ s }}</option>
                         {% endfor %}
@@ -367,4 +372,84 @@
       </section>
     </main>
   </div>
+  <script>
+    const showStatusToast = (message, level = "warning") => {
+      if (!message) return;
+      if (typeof window.showCartToast === "function") {
+        const toastLevel = level === "error" ? "danger" : level;
+        window.showCartToast(message, toastLevel);
+        return;
+      }
+      window.alert(message);
+    };
+
+    const applyBadgeStatus = (form, status) => {
+      const row = form.closest("tr");
+      if (!row) return;
+      const badge = row.querySelector(".badge-status");
+      if (!badge) return;
+      badge.textContent = status;
+      badge.className = `badge-status status-${status}`;
+    };
+
+    const submitStatusForm = async (form, select) => {
+      if (!form || !select) return;
+      const previousStatus = select.dataset.prevValue || select.value;
+      const nextStatus = select.value;
+      if (!nextStatus || nextStatus === previousStatus) {
+        select.dataset.prevValue = nextStatus;
+        return;
+      }
+
+      const submitButton = form.querySelector("button[type='submit']");
+      const originalBtnLabel = submitButton ? submitButton.textContent : "";
+      select.disabled = true;
+      if (submitButton) {
+        submitButton.disabled = true;
+        submitButton.textContent = "Saving...";
+      }
+
+      try {
+        const res = await fetch(form.action, {
+          method: "POST",
+          body: new FormData(form),
+          credentials: "same-origin",
+          headers: {
+            "X-Requested-With": "XMLHttpRequest",
+            "Accept": "application/json"
+          }
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || data.ok === false) {
+          throw new Error(data.message || "Unable to update order status.");
+        }
+        const appliedStatus = String(data.new_status || nextStatus).toUpperCase();
+        select.value = appliedStatus;
+        select.dataset.prevValue = appliedStatus;
+        applyBadgeStatus(form, appliedStatus);
+        showStatusToast(data.message || "Order status updated.", "success");
+      } catch (err) {
+        select.value = previousStatus;
+        showStatusToast(err.message || "Unable to update order status.", "warning");
+      } finally {
+        select.disabled = false;
+        if (submitButton) {
+          submitButton.disabled = false;
+          submitButton.textContent = originalBtnLabel;
+        }
+      }
+    };
+
+    document.querySelectorAll(".js-status-select").forEach((select) => {
+      select.dataset.prevValue = select.value;
+    });
+
+    document.querySelectorAll(".js-status-form").forEach((form) => {
+      form.addEventListener("submit", (event) => {
+        event.preventDefault();
+        const select = form.querySelector(".js-status-select");
+        submitStatusForm(form, select);
+      });
+    });
+  </script>
 {% endblock %}
