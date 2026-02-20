@@ -71,19 +71,25 @@
         <table class="table align-middle mb-0">
           <thead>
             <tr>
-              <th>User</th>
-              <th>Email</th>
-              <th>Phone</th>
+              <th>Username</th>
               <th>Signed Up</th>
             </tr>
           </thead>
           <tbody>
             {% for row in referrals %}
             <tr>
-              <td>{{ row[1] }}</td>
-              <td>{{ row[2] or "-" }}</td>
-              <td>{{ row[3] or "-" }}</td>
-              <td>{{ row[4] or "-" }}</td>
+              <td>{{ row[1] or "-" }}</td>
+              <td>
+                {% if row[2] %}
+                  {% if row[2].strftime is defined %}
+                    {{ row[2].strftime("%Y-%m-%d") }}
+                  {% else %}
+                    {{ (row[2]|string)[:10] }}
+                  {% endif %}
+                {% else %}
+                  -
+                {% endif %}
+              </td>
             </tr>
             {% endfor %}
           </tbody>

@@ -6084,8 +6084,6 @@ def my_referrals():
                     SELECT
                         u.id,
                         u.username,
-                        u.email,
-                        u.phone,
                         r.created_at
                     FROM user_referrals r
                     JOIN users u ON u.id = r.referred_user_id
