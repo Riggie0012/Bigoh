@@ -18,6 +18,7 @@ import urllib.error
 import hmac
 import time
 import logging
+import sys
 from logging.handlers import RotatingFileHandler
 from typing import Optional
 from authlib.integrations.flask_client import OAuth
@@ -187,6 +188,11 @@ handler.setLevel(LOG_LEVEL)
 handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
 app.logger.addHandler(handler)
 app.logger.setLevel(LOG_LEVEL)
+# Also log to stdout so platform log collectors (e.g. Railway) capture exceptions
+stream_handler = logging.StreamHandler(stream=sys.stdout)
+stream_handler.setLevel(LOG_LEVEL)
+stream_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
+app.logger.addHandler(stream_handler)
 
 RATE_LIMITS = {
     "signin": (8, 60),
