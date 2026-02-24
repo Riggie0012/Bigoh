@@ -874,11 +874,11 @@ def get_category_overview(conn=None, limit=None):
             base_sql = f"""
                 SELECT c.category, c.total, p.image_url
                 FROM (
-                    SELECT category, COUNT(*) AS total, MAX(product_id) AS latest_id
+                    SELECT TRIM(category) AS category, COUNT(*) AS total, MAX(product_id) AS latest_id
                     FROM products
-                    WHERE category IS NOT NULL AND category <> ''
+                    WHERE TRIM(COALESCE(category, '')) <> ''
                       AND {visibility_filter}
-                    GROUP BY category
+                    GROUP BY TRIM(category)
                 ) c
                 LEFT JOIN products p ON p.product_id = c.latest_id
                 ORDER BY c.total DESC, c.category ASC
@@ -3541,7 +3541,7 @@ def home():
             cursor.execute(
                 f"""
                 SELECT * FROM products
-                WHERE category = %s AND {visibility_filter}
+                WHERE TRIM(category) = %s AND {visibility_filter}
                 ORDER BY product_id DESC
                 LIMIT %s
                 """,
@@ -5381,10 +5381,10 @@ def get_products_by_category(category_name, filters=None):
         availability = filters.get("availability", "")
 
         if len(category_keys) == 1:
-            category_clause = "LOWER(category) = %s"
+            category_clause = "LOWER(TRIM(category)) = %s"
         else:
             placeholders = ", ".join(["%s"] * len(category_keys))
-            category_clause = f"LOWER(category) IN ({placeholders})"
+            category_clause = f"LOWER(TRIM(category)) IN ({placeholders})"
         where_parts = [category_clause, products_visibility_clause(connection)]
         params = category_keys[:]
         if brand:
@@ -5524,7 +5524,7 @@ def category_jersey():
                     f"""
                     SELECT DISTINCT size
                     FROM products
-                    WHERE LOWER(category) = %s
+                    WHERE LOWER(TRIM(category)) = %s
                       AND {visibility_filter}
                       AND size IS NOT NULL
                       AND size <> ''
