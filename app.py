@@ -889,13 +889,10 @@ def get_category_overview(conn=None, limit=None):
                 params.append(int(limit))
             cur.execute(base_sql, params)
             rows = cur.fetchall() or []
-        allowed_keys = {name.lower() for name in get_managed_categories()}
         categories = []
         for row in rows:
             raw_name = str(_row_at(row, 0, "") or "").strip()
             if not raw_name:
-                continue
-            if allowed_keys and raw_name.lower() not in allowed_keys:
                 continue
             display_name = normalize_category_label(raw_name)
             categories.append(
@@ -2379,7 +2376,9 @@ def products_visibility_clause(conn, alias: str = "") -> str:
     if not table_has_column(conn, "products", "is_hidden"):
         return "1=1"
     column_name = f"{alias}.is_hidden" if alias else "is_hidden"
-    return f"({column_name} IS NULL OR {column_name} = 0)"
+    stock_name = f"{alias}.stock" if alias else "stock"
+    # Keep in-stock products visible even if an older hidden flag was left behind.
+    return f"({column_name} IS NULL OR {column_name} = 0 OR {stock_name} > 0)"
 
 
 def table_column_index(conn, table: str, column: str) -> Optional[int]:
@@ -6899,6 +6898,11 @@ def upload():
                 has_seller = products_has_seller(connection)
                 has_color = products_has_color(connection)
                 has_size = products_has_size(connection)
+                has_visibility = table_has_column(connection, "products", "is_hidden")
+                try:
+                    stock_value = int(stock or 0)
+                except ValueError:
+                    stock_value = 0
 
                 columns = ["product_name", "category", "brand"]
                 values = [product_name, category, brand]
@@ -6912,7 +6916,10 @@ def upload():
                     columns.append("size")
                     values.append(size)
                 columns.extend(["price", "stock", "description", "image_url"])
-                values.extend([price, stock, description, image_url])
+                values.extend([price, stock_value, description, image_url])
+                if has_visibility:
+                    columns.append("is_hidden")
+                    values.append(1 if stock_value <= 0 else 0)
 
                 placeholders = ", ".join(["%s"] * len(columns))
                 sql = f"INSERT INTO products ({', '.join(columns)}) VALUES ({placeholders})"
@@ -8120,6 +8127,10 @@ def admin_edit_product(product_id):
                 price = request.form.get("price", "").strip()
                 stock = request.form.get("stock", "0").strip()
                 description = request.form.get("description", "").strip()
+                try:
+                    new_stock = int(stock or 0)
+                except ValueError:
+                    new_stock = 0
 
                 if not categories_list:
                     return render_template(
@@ -8183,15 +8194,15 @@ def admin_edit_product(product_id):
                     set_parts.append("size=%s")
                     values.append(size)
                 set_parts.extend(["price=%s", "stock=%s", "description=%s", "image_url=%s"])
-                values.extend([price, stock, description, image_url, product_id])
+                values.extend([price, new_stock, description, image_url])
+                if table_has_column(conn, "products", "is_hidden"):
+                    set_parts.append("is_hidden=%s")
+                    values.append(1 if new_stock <= 0 else 0)
+                values.append(product_id)
 
                 sql = f"UPDATE products SET {', '.join(set_parts)} WHERE product_id=%s"
                 cur.execute(sql, tuple(values))
                 conn.commit()
-                try:
-                    new_stock = int(stock or 0)
-                except ValueError:
-                    new_stock = 0
                 if old_stock > 0 and new_stock <= 0:
                     try:
                         with conn.cursor() as alert_cur:
