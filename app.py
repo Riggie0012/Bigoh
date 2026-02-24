@@ -870,13 +870,14 @@ def get_category_overview(conn=None, limit=None):
     try:
         ensure_products_visibility_column(conn)
         with conn.cursor() as cur:
-            base_sql = """
+            visibility_filter = products_visibility_clause(conn)
+            base_sql = f"""
                 SELECT c.category, c.total, p.image_url
                 FROM (
                     SELECT category, COUNT(*) AS total, MAX(product_id) AS latest_id
                     FROM products
                     WHERE category IS NOT NULL AND category <> ''
-                      AND (is_hidden IS NULL OR is_hidden = 0)
+                      AND {visibility_filter}
                     GROUP BY category
                 ) c
                 LEFT JOIN products p ON p.product_id = c.latest_id
@@ -1318,18 +1319,21 @@ def task_auto_hide():
     if not _cron_authorized():
         return "Unauthorized", 401
     conn = get_db_connection()
+    hidden = 0
+    unhidden = 0
     try:
         ensure_products_visibility_column(conn)
-        with conn.cursor() as cur:
-            cur.execute(
-                "UPDATE products SET is_hidden=1 WHERE stock <= 0 AND (is_hidden IS NULL OR is_hidden = 0)"
-            )
-            hidden = cur.rowcount
-            cur.execute(
-                "UPDATE products SET is_hidden=0 WHERE stock > 0 AND is_hidden = 1"
-            )
-            unhidden = cur.rowcount
-        conn.commit()
+        if table_has_column(conn, "products", "is_hidden"):
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE products SET is_hidden=1 WHERE stock <= 0 AND (is_hidden IS NULL OR is_hidden = 0)"
+                )
+                hidden = cur.rowcount
+                cur.execute(
+                    "UPDATE products SET is_hidden=0 WHERE stock > 0 AND is_hidden = 1"
+                )
+                unhidden = cur.rowcount
+            conn.commit()
     finally:
         conn.close()
     return jsonify(ok=True, hidden=hidden, unhidden=unhidden)
@@ -3100,13 +3104,19 @@ def ensure_orders_delivery_columns(conn):
 
 
 def ensure_products_visibility_column(conn):
+    cache_key = _schema_cache_key("products", "is_hidden")
     try:
         with conn.cursor() as cur:
             if not table_has_column(conn, "products", "is_hidden"):
                 cur.execute("ALTER TABLE products ADD COLUMN is_hidden TINYINT(1) NOT NULL DEFAULT 0")
+                app.config[cache_key] = True
         conn.commit()
         return True
-    except Exception:
+    except Exception as exc:
+        # Keep visibility checks usable when ALTER was triggered by stale cache.
+        if "Duplicate column name" in str(exc) and "is_hidden" in str(exc):
+            app.config[cache_key] = True
+            return True
         return False
 
 
@@ -3327,16 +3337,17 @@ def get_sponsored_products(conn, limit: int = 8):
     products = []
     try:
         ensure_products_visibility_column(conn)
+        visibility_filter = products_visibility_clause(conn, "p")
         with conn.cursor() as cur:
             if not ensure_sponsored_products_table(cur):
                 return products
             conn.commit()
             cur.execute(
-                """
+                f"""
                 SELECT p.*
                 FROM sponsored_products s
                 JOIN products p ON p.product_id = s.product_id
-                WHERE s.is_active = 1 AND (p.is_hidden IS NULL OR p.is_hidden = 0)
+                WHERE s.is_active = 1 AND {visibility_filter}
                 ORDER BY s.id DESC
                 LIMIT %s
                 """,
@@ -3369,6 +3380,7 @@ def get_flash_sale_state(conn):
     }
     try:
         ensure_products_visibility_column(conn)
+        visibility_filter = products_visibility_clause(conn, "p")
         with conn.cursor() as cur:
             if not ensure_flash_sale_tables(cur):
                 return state
@@ -3407,11 +3419,11 @@ def get_flash_sale_state(conn):
             items = []
             if is_active:
                 cur.execute(
-                    """
+                    f"""
                     SELECT p.*
                     FROM flash_sale_items f
                     JOIN products p ON f.product_id = p.product_id
-                    WHERE f.is_active = 1 AND (p.is_hidden IS NULL OR p.is_hidden = 0)
+                    WHERE f.is_active = 1 AND {visibility_filter}
                     ORDER BY p.product_id DESC
                     """
                 )
@@ -3519,6 +3531,7 @@ def home():
         items_limit = int(os.getenv("HOME_CATEGORY_ITEMS", "12") or 12)
         new_limit = int(os.getenv("NEW_PRODUCTS_LIMIT", "10") or 10)
         ensure_products_visibility_column(connection)
+        visibility_filter = products_visibility_clause(connection)
         cursor = connection.cursor()
         category_rows = get_category_overview(connection, limit=category_limit)
         categories = []
@@ -3527,9 +3540,9 @@ def home():
             if not category_name:
                 continue
             cursor.execute(
-                """
+                f"""
                 SELECT * FROM products
-                WHERE category = %s AND (is_hidden IS NULL OR is_hidden = 0)
+                WHERE category = %s AND {visibility_filter}
                 ORDER BY product_id DESC
                 LIMIT %s
                 """,
@@ -3548,9 +3561,12 @@ def home():
             )
 
         if table_has_column(connection, "products", "created_at"):
-            sql5 = "SELECT * FROM products WHERE (is_hidden IS NULL OR is_hidden = 0) ORDER BY created_at DESC, product_id DESC LIMIT %s"
+            sql5 = (
+                f"SELECT * FROM products WHERE {visibility_filter} "
+                "ORDER BY created_at DESC, product_id DESC LIMIT %s"
+            )
         else:
-            sql5 = "SELECT * FROM products WHERE (is_hidden IS NULL OR is_hidden = 0) ORDER BY product_id DESC LIMIT %s"
+            sql5 = f"SELECT * FROM products WHERE {visibility_filter} ORDER BY product_id DESC LIMIT %s"
         cursor = connection.cursor()
         cursor.execute(sql5, (new_limit,))
         new_products = cursor.fetchall()
@@ -5243,7 +5259,7 @@ def advanced_product_search(raw_query, limit=60, include_rating_score=True):
     if corrected_query and corrected_query != raw_lower:
         add_query_scores(corrected_query, 0.9)
 
-    where_parts.append("(p.is_hidden IS NULL OR p.is_hidden = 0)")
+    where_parts.append("{VISIBILITY_FILTER}")
 
     if min_price is not None and max_price is not None:
         where_parts.append("p.price BETWEEN %s AND %s")
@@ -5299,6 +5315,7 @@ def advanced_product_search(raw_query, limit=60, include_rating_score=True):
     connection = get_db_connection()
     try:
         ensure_products_visibility_column(connection)
+        sql = sql.replace("{VISIBILITY_FILTER}", products_visibility_clause(connection, "p"))
         with connection.cursor() as cursor:
             cursor.execute(sql, score_params + where_params)
             return cursor.fetchall()
@@ -5369,7 +5386,7 @@ def get_products_by_category(category_name, filters=None):
         else:
             placeholders = ", ".join(["%s"] * len(category_keys))
             category_clause = f"LOWER(category) IN ({placeholders})"
-        where_parts = [category_clause, "(is_hidden IS NULL OR is_hidden = 0)"]
+        where_parts = [category_clause, products_visibility_clause(connection)]
         params = category_keys[:]
         if brand:
             where_parts.append("brand = %s")
@@ -5498,16 +5515,18 @@ def category_jersey():
     sizes = []
     conn = get_db_connection()
     try:
+        ensure_products_visibility_column(conn)
+        visibility_filter = products_visibility_clause(conn)
         color_index = table_column_index(conn, "products", "color")
         size_index = table_column_index(conn, "products", "size")
         if products_has_size(conn):
             with conn.cursor() as cur:
                 cur.execute(
-                    """
+                    f"""
                     SELECT DISTINCT size
                     FROM products
                     WHERE LOWER(category) = %s
-                      AND (is_hidden IS NULL OR is_hidden = 0)
+                      AND {visibility_filter}
                       AND size IS NOT NULL
                       AND size <> ''
                     ORDER BY size
