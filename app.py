@@ -18,7 +18,6 @@ import urllib.error
 import hmac
 import time
 import logging
-import sys
 from logging.handlers import RotatingFileHandler
 from typing import Optional
 from authlib.integrations.flask_client import OAuth
@@ -26,6 +25,7 @@ from werkzeug.utils import secure_filename
 from werkzeug.security import generate_password_hash, check_password_hash
 import pymysql
 from dotenv import load_dotenv
+
 try:
     from PIL import Image, ImageOps
 except Exception:
@@ -74,7 +74,9 @@ SUPPORT_HOURS = os.getenv("SUPPORT_HOURS", "Daily 8:00am - 8:00pm EAT")
 PAYMENT_DETAILS_TITLE = os.getenv("PAYMENT_DETAILS_TITLE", "Payment Details")
 PAYMENT_DETAILS_LINES = os.getenv("PAYMENT_DETAILS_LINES", "").strip()
 STATIC_CDN_BASE = os.getenv("STATIC_CDN_BASE", "").strip()
-USE_CLOUDINARY = bool((os.getenv("CLOUDINARY_URL") or os.getenv("CLOUDINARY_CLOUD_NAME")) and cloudinary)
+USE_CLOUDINARY = bool(
+    (os.getenv("CLOUDINARY_URL") or os.getenv("CLOUDINARY_CLOUD_NAME")) and cloudinary
+)
 LOYALTY_ENABLED = os.getenv("LOYALTY_ENABLED", "1") == "1"
 LOYALTY_REPEAT_ORDERS_MIN = int(os.getenv("LOYALTY_REPEAT_ORDERS_MIN", "2"))
 LOYALTY_REPEAT_DISCOUNT_PCT = float(os.getenv("LOYALTY_REPEAT_DISCOUNT_PCT", "5"))
@@ -112,7 +114,9 @@ WHATSAPP_ALERT_WEBHOOK = os.getenv("WHATSAPP_ALERT_WEBHOOK", "").strip()
 WHATSAPP_ALERT_TOKEN = os.getenv("WHATSAPP_ALERT_TOKEN", "").strip()
 WHATSAPP_ALERT_TO = os.getenv("WHATSAPP_ALERT_TO", "").strip() or SUPPORT_WHATSAPP
 WHATSAPP_RECEIPTS_ENABLED = os.getenv("WHATSAPP_RECEIPTS_ENABLED", "0") == "1"
-WHATSAPP_STATUS_UPDATES_ENABLED = os.getenv("WHATSAPP_STATUS_UPDATES_ENABLED", "1") == "1"
+WHATSAPP_STATUS_UPDATES_ENABLED = (
+    os.getenv("WHATSAPP_STATUS_UPDATES_ENABLED", "1") == "1"
+)
 CRON_SECRET = os.getenv("CRON_SECRET", "").strip()
 ABANDONED_CART_HOURS = int(os.getenv("ABANDONED_CART_HOURS", "4"))
 REVIEW_REQUEST_DELAY_HOURS = int(os.getenv("REVIEW_REQUEST_DELAY_HOURS", "24"))
@@ -147,9 +151,7 @@ DB_READ_TIMEOUT = _safe_float_env("DB_READ_TIMEOUT", 8.0)
 DB_WRITE_TIMEOUT = _safe_float_env("DB_WRITE_TIMEOUT", 8.0)
 DB_FAILURE_BACKOFF_SECONDS = _safe_float_env("DB_FAILURE_BACKOFF_SECONDS", 20.0)
 BRAND_PARTNERS = [
-    p.strip()
-    for p in os.getenv("BRAND_PARTNERS", "").split(",")
-    if p.strip()
+    p.strip() for p in os.getenv("BRAND_PARTNERS", "").split(",") if p.strip()
 ]
 DEFAULT_MANAGED_CATEGORIES = [
     "Shoes",
@@ -161,7 +163,9 @@ DEFAULT_MANAGED_CATEGORIES = [
 ]
 MANAGED_CATEGORIES = [
     name.strip()
-    for name in os.getenv("MANAGED_CATEGORIES", ",".join(DEFAULT_MANAGED_CATEGORIES)).split(",")
+    for name in os.getenv(
+        "MANAGED_CATEGORIES", ",".join(DEFAULT_MANAGED_CATEGORIES)
+    ).split(",")
     if name.strip()
 ]
 
@@ -185,14 +189,11 @@ os.makedirs(LOG_DIR, exist_ok=True)
 log_path = os.path.join(LOG_DIR, "app.log")
 handler = RotatingFileHandler(log_path, maxBytes=2_000_000, backupCount=3)
 handler.setLevel(LOG_LEVEL)
-handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
+handler.setFormatter(
+    logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
+)
 app.logger.addHandler(handler)
 app.logger.setLevel(LOG_LEVEL)
-# Also log to stdout so platform log collectors (e.g. Railway) capture exceptions
-stream_handler = logging.StreamHandler(stream=sys.stdout)
-stream_handler.setLevel(LOG_LEVEL)
-stream_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
-app.logger.addHandler(stream_handler)
 
 RATE_LIMITS = {
     "signin": (8, 60),
@@ -205,7 +206,9 @@ _rate_store = {}
 
 
 DEFAULT_UPLOAD_ROOT = "/data/uploads" if os.path.isdir("/data/uploads") else "static"
-UPLOAD_ROOT = os.getenv("UPLOAD_ROOT", DEFAULT_UPLOAD_ROOT).strip() or DEFAULT_UPLOAD_ROOT
+UPLOAD_ROOT = (
+    os.getenv("UPLOAD_ROOT", DEFAULT_UPLOAD_ROOT).strip() or DEFAULT_UPLOAD_ROOT
+)
 UPLOAD_FOLDER = os.path.join(UPLOAD_ROOT, "images")
 REVIEW_UPLOAD_FOLDER = os.path.join(UPLOAD_ROOT, "review_photos")
 ALLOWED_EXTENSIONS = {"png", "jpg", "jpeg", "webp"}
@@ -231,11 +234,13 @@ oauth.register(
     client_kwargs={"scope": "openid email profile"},
 )
 
+
 def cdn_url_for(endpoint, **values):
     if endpoint == "static" and STATIC_CDN_BASE:
         filename = values.get("filename", "")
         return f"{STATIC_CDN_BASE.rstrip('/')}/{filename.lstrip('/')}"
     return url_for(endpoint, **values)
+
 
 app.jinja_env.globals["url_for"] = cdn_url_for
 
@@ -259,8 +264,12 @@ def _client_ip():
 
 
 def _rate_limit_exceeded():
-    if request.headers.get("X-Requested-With") == "XMLHttpRequest" or "application/json" in request.headers.get("Accept", ""):
-        return jsonify(ok=False, message="Too many requests. Please slow down.", level="warning"), 429
+    if request.headers.get(
+        "X-Requested-With"
+    ) == "XMLHttpRequest" or "application/json" in request.headers.get("Accept", ""):
+        return jsonify(
+            ok=False, message="Too many requests. Please slow down.", level="warning"
+        ), 429
     set_site_message("Too many requests. Please try again shortly.", "warning")
     return redirect(request.referrer or url_for("home")), 429
 
@@ -283,8 +292,11 @@ def rate_limit(key: str):
             bucket.append(now)
             _rate_store[bucket_key] = bucket
             return view(*args, **kwargs)
+
         return wrapped
+
     return decorator
+
 
 def allowed_file(filename: str) -> bool:
     return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
@@ -462,7 +474,9 @@ def _make_qr_data_uri(payload: str) -> Optional[str]:
     return f"data:image/png;base64,{encoded}"
 
 
-def _build_scu_info(order_id: int, reference: str, issued_at: datetime, items, total: float):
+def _build_scu_info(
+    order_id: int, reference: str, issued_at: datetime, items, total: float
+):
     base = f"{order_id}|{reference}|{issued_at.isoformat()}|{len(items)}|{total:.2f}"
     internal_hash = hashlib.sha1(base.encode("utf-8")).hexdigest().upper()
     signature_hash = hashlib.sha256((base + "|SCU").encode("utf-8")).hexdigest().upper()
@@ -502,7 +516,9 @@ def _migrate_static_uploads():
             rel_root = os.path.relpath(root, src_dir)
             for filename in files:
                 src_path = os.path.join(root, filename)
-                rel_path = filename if rel_root == "." else os.path.join(rel_root, filename)
+                rel_path = (
+                    filename if rel_root == "." else os.path.join(rel_root, filename)
+                )
                 dest_path = os.path.join(dest_dir, rel_path)
                 os.makedirs(os.path.dirname(dest_path), exist_ok=True)
                 if os.path.exists(dest_path):
@@ -596,7 +612,9 @@ def _migrate_cloudinary_assets(limit: int = 25):
             review_rows = []
             if processed < limit:
                 try:
-                    cur.execute("SELECT id, review_photo FROM product_reviews WHERE review_photo IS NOT NULL")
+                    cur.execute(
+                        "SELECT id, review_photo FROM product_reviews WHERE review_photo IS NOT NULL"
+                    )
                     review_rows = cur.fetchall() or []
                 except Exception:
                     review_rows = []
@@ -606,7 +624,9 @@ def _migrate_cloudinary_assets(limit: int = 25):
                     break
                 review_id = _row_at(row, 0)
                 review_photo = _row_at(row, 1, "")
-                if not review_photo or str(review_photo).startswith(("http://", "https://")):
+                if not review_photo or str(review_photo).startswith(
+                    ("http://", "https://")
+                ):
                     skipped += 1
                     processed += 1
                     continue
@@ -707,7 +727,11 @@ def _cloudinary_delete_public_ids(public_ids, batch_size: int = 100):
                 resource_type="image",
                 type="upload",
             )
-            deleted += sum(1 for _, status in (result.get("deleted") or {}).items() if status == "deleted")
+            deleted += sum(
+                1
+                for _, status in (result.get("deleted") or {}).items()
+                if status == "deleted"
+            )
         except Exception:
             errors += len(chunk)
     return {"deleted": deleted, "errors": errors}
@@ -738,7 +762,9 @@ def _cloudinary_db_public_ids(conn) -> set:
     try:
         with conn.cursor() as cur:
             try:
-                cur.execute("SELECT image_url FROM products WHERE image_url IS NOT NULL")
+                cur.execute(
+                    "SELECT image_url FROM products WHERE image_url IS NOT NULL"
+                )
                 for row in cur.fetchall() or []:
                     pid = _cloudinary_public_id_from_url(_row_at(row, 0, ""))
                     if pid:
@@ -746,7 +772,9 @@ def _cloudinary_db_public_ids(conn) -> set:
             except Exception:
                 pass
             try:
-                cur.execute("SELECT review_photo FROM product_reviews WHERE review_photo IS NOT NULL")
+                cur.execute(
+                    "SELECT review_photo FROM product_reviews WHERE review_photo IS NOT NULL"
+                )
                 for row in cur.fetchall() or []:
                     pid = _cloudinary_public_id_from_url(_row_at(row, 0, ""))
                     if pid:
@@ -814,9 +842,11 @@ def _cloudinary_delete_duplicate_content(max_results: int = 500):
     delete_result.update({"kept": kept, "scanned": len(resources)})
     return delete_result
 
+
 def slugify_category(name: str) -> str:
     slug = re.sub(r"[^a-z0-9]+", "-", (name or "").lower()).strip("-")
     return slug or "category"
+
 
 WATCH_CATEGORY_ALIASES = {
     "watch",
@@ -916,6 +946,8 @@ def get_category_overview(conn=None, limit=None):
     finally:
         if owns_conn:
             conn.close()
+
+
 def _row_at(row, idx, default=None):
     if row is None:
         return default
@@ -936,10 +968,7 @@ def _is_safe_url(target):
     try:
         ref = urlparse(request.host_url)
         test = urlparse(target)
-        return (
-            test.scheme in ("http", "https", "")
-            and ref.netloc == test.netloc
-        )
+        return test.scheme in ("http", "https", "") and ref.netloc == test.netloc
     except Exception:
         return False
 
@@ -947,8 +976,8 @@ def _is_safe_url(target):
 def _remember_next_url():
     next_param = request.args.get("next", "")
     candidate = next_param or (request.referrer or "")
-    if not _is_safe_url(candidate): 
-        return 
+    if not _is_safe_url(candidate):
+        return
     path = urlparse(candidate).path or ""
     if path in ("/signin", "/signup"):
         return
@@ -972,7 +1001,9 @@ def _cron_authorized() -> bool:
     return bool(token and hmac.compare_digest(str(token), str(CRON_SECRET)))
 
 
-def _build_status_message(status: str, order_id: int, user_name: str, receipt_link: str) -> str:
+def _build_status_message(
+    status: str, order_id: int, user_name: str, receipt_link: str
+) -> str:
     status = (status or "").upper()
     templates = {
         "PENDING": (
@@ -1041,9 +1072,22 @@ def csrf_protect():
             or request.headers.get("X-CSRFToken")
         )
         session_token = session.get("_csrf_token", "")
-        if not token or not session_token or not hmac.compare_digest(str(token), str(session_token)):
-            app.logger.warning("CSRF blocked: %s %s from %s", request.method, request.path, _client_ip())
-            if request.headers.get("X-Requested-With") == "XMLHttpRequest" or "application/json" in request.headers.get("Accept", ""):
+        if (
+            not token
+            or not session_token
+            or not hmac.compare_digest(str(token), str(session_token))
+        ):
+            app.logger.warning(
+                "CSRF blocked: %s %s from %s",
+                request.method,
+                request.path,
+                _client_ip(),
+            )
+            if request.headers.get(
+                "X-Requested-With"
+            ) == "XMLHttpRequest" or "application/json" in request.headers.get(
+                "Accept", ""
+            ):
                 return jsonify(ok=False, message="Invalid CSRF token.", status=400), 400
             return render_template(
                 "error.html",
@@ -1067,6 +1111,34 @@ def track_active_session():
 
         user_id = session.get("username")
         username = session.get("key")
+        # Validate that the session's user still exists in the users table.
+        # If the user was deleted externally, clear identity information to
+        # avoid foreign-key errors when handlers perform writes.
+        if user_id:
+            try:
+                with get_db_connection().cursor() as _cur:
+                    _cur.execute("SELECT 1 FROM users WHERE id=%s LIMIT 1", (user_id,))
+                    if not _cur.fetchone():
+                        app.logger.warning(
+                            "Session contained missing user_id=%s; clearing session identity",
+                            user_id,
+                        )
+                        # Remove identity-related session keys only (keep active_session_id).
+                        session.pop("username", None)
+                        session.pop("key", None)
+                        session.pop("user_email", None)
+                        session.pop("is_admin", None)
+                        session.pop("referral_code", None)
+                        session.pop("remember_me", None)
+                        # Ask user to sign in again for safety.
+                        session["next_url"] = request.path or url_for("home")
+                        set_site_message(
+                            "Your account was not found. Please sign in.", "warning"
+                        )
+                        return redirect(url_for("signin"))
+            except Exception:
+                # If the validation check fails (DB error), continue and let handlers handle errors.
+                app.logger.exception("Failed to validate session user_id %s", user_id)
         ip_address = _client_ip()
         user_agent = request.headers.get("User-Agent", "")[:255]
         current_path = (request.path or "")[:255]
@@ -1302,8 +1374,12 @@ def task_stale_pending():
                 order_id = _row_at(row, 0)
                 phone = _row_at(row, 2, "")
                 name = _row_at(row, 3, "") or "Customer"
-                receipt_link = url_for("order_receipt", order_id=order_id, _external=True)
-                message = _build_status_message("CANCELLED", order_id, name, receipt_link)
+                receipt_link = url_for(
+                    "order_receipt", order_id=order_id, _external=True
+                )
+                message = _build_status_message(
+                    "CANCELLED", order_id, name, receipt_link
+                )
                 cur.execute(
                     "UPDATE orders SET status='CANCELLED', status_updated_at=NOW() WHERE order_id=%s",
                     (order_id,),
@@ -1402,7 +1478,9 @@ def task_daily_summary():
     finally:
         conn.close()
 
-    top_lines = "\n".join([f"- {row[0]} ({int(row[1])})" for row in top]) or "No sales yet."
+    top_lines = (
+        "\n".join([f"- {row[0]} ({int(row[1])})" for row in top]) or "No sales yet."
+    )
     message = (
         f"{BUSINESS_NAME} Daily Summary (today)\n"
         f"Orders: {orders_count}\n"
@@ -1413,6 +1491,7 @@ def task_daily_summary():
     )
     _send_whatsapp_alert(message)
     return jsonify(ok=True, orders=orders_count, revenue=revenue)
+
 
 def _parse_db_url(db_url: str) -> dict:
     parsed = urlparse(db_url)
@@ -1525,9 +1604,7 @@ def get_db_connection():
                 " The host looks like a Railway internal address. "
                 "Use the public MySQL host/port (or DATABASE_URL) when deploying outside Railway."
             )
-        raise pymysql.err.OperationalError(
-            exc.args[0], f"{exc.args[1]}{hint}"
-        ) from exc
+        raise pymysql.err.OperationalError(exc.args[0], f"{exc.args[1]}{hint}") from exc
     except OSError as exc:
         _mark_db_connect_failure()
         hint = ""
@@ -1665,10 +1742,14 @@ def ensure_referral_schema(conn) -> bool:
                 """
             )
             if not table_has_column(conn, "users", "referral_code"):
-                cur.execute("ALTER TABLE users ADD COLUMN referral_code VARCHAR(24) NULL")
+                cur.execute(
+                    "ALTER TABLE users ADD COLUMN referral_code VARCHAR(24) NULL"
+                )
                 app.config[_schema_cache_key("users", "referral_code")] = True
             try:
-                cur.execute("CREATE UNIQUE INDEX uniq_users_referral_code ON users (referral_code)")
+                cur.execute(
+                    "CREATE UNIQUE INDEX uniq_users_referral_code ON users (referral_code)"
+                )
             except Exception:
                 pass
         conn.commit()
@@ -1691,7 +1772,9 @@ def ensure_user_referral_code(conn, user_id: int, username: str = "") -> str:
         return ""
     try:
         with conn.cursor() as cur:
-            cur.execute("SELECT referral_code FROM users WHERE id=%s LIMIT 1", (user_id,))
+            cur.execute(
+                "SELECT referral_code FROM users WHERE id=%s LIMIT 1", (user_id,)
+            )
             row = cur.fetchone()
             existing = _normalize_referral_code(_row_at(row, 0, ""))
             if existing:
@@ -1701,10 +1784,15 @@ def ensure_user_referral_code(conn, user_id: int, username: str = "") -> str:
             for _ in range(24):
                 suffix = _generate_referral_code(REFERRAL_CODE_LEN)
                 candidate = f"{base}{suffix}"[:24] if base else suffix
-                cur.execute("SELECT 1 FROM users WHERE referral_code=%s LIMIT 1", (candidate,))
+                cur.execute(
+                    "SELECT 1 FROM users WHERE referral_code=%s LIMIT 1", (candidate,)
+                )
                 if cur.fetchone():
                     continue
-                cur.execute("UPDATE users SET referral_code=%s WHERE id=%s", (candidate, user_id))
+                cur.execute(
+                    "UPDATE users SET referral_code=%s WHERE id=%s",
+                    (candidate, user_id),
+                )
                 return candidate
     except Exception:
         return ""
@@ -1778,7 +1866,9 @@ def _ensure_single_default_address(cur, user_id: int):
             break
     if not picked_id:
         picked_id = int(_row_at(rows[0], 0, 0) or 0)
-    cur.execute("UPDATE user_addresses SET is_default = 0 WHERE user_id = %s", (user_id,))
+    cur.execute(
+        "UPDATE user_addresses SET is_default = 0 WHERE user_id = %s", (user_id,)
+    )
     cur.execute(
         "UPDATE user_addresses SET is_default = 1 WHERE user_id = %s AND id = %s",
         (user_id, picked_id),
@@ -1787,7 +1877,9 @@ def _ensure_single_default_address(cur, user_id: int):
 
 def _get_account_user(conn, user_id: int):
     with conn.cursor() as cur:
-        cur.execute("SELECT username, email, phone FROM users WHERE id=%s LIMIT 1", (user_id,))
+        cur.execute(
+            "SELECT username, email, phone FROM users WHERE id=%s LIMIT 1", (user_id,)
+        )
         row = cur.fetchone() or ("User", "", "")
     return {
         "username": str(_row_at(row, 0, "User") or "User"),
@@ -1816,7 +1908,9 @@ def _get_user_addresses(conn, user_id: int):
                 "recipient_name": str(_row_at(row, 1, "") or ""),
                 "phone": str(_row_at(row, 2, "") or ""),
                 "address_line": str(_row_at(row, 3, "") or ""),
-                "address_label": str(_row_at(row, 4, "Pickup Station") or "Pickup Station"),
+                "address_label": str(
+                    _row_at(row, 4, "Pickup Station") or "Pickup Station"
+                ),
                 "is_default": bool(_row_at(row, 5, 0)),
             }
         )
@@ -1952,13 +2046,17 @@ def apply_signup_coupon_rewards(conn, user_id: int) -> dict:
         result["issued_count"] = issued_count
         result["applied"] = issued_count > 0
         if issued_count > 0:
-            result["message"] = f"Signup bonus applied: {issued_count} coupons added to your account."
+            result["message"] = (
+                f"Signup bonus applied: {issued_count} coupons added to your account."
+            )
     except Exception:
         return result
     return result
 
 
-def apply_signup_referral_rewards(conn, referred_user_id: int, referral_input: str) -> dict:
+def apply_signup_referral_rewards(
+    conn, referred_user_id: int, referral_input: str
+) -> dict:
     result = {
         "applied": False,
         "message": "",
@@ -2007,7 +2105,10 @@ def apply_signup_referral_rewards(conn, referred_user_id: int, referral_input: s
                 result["message"] = "You cannot use your own referral code."
                 return result
 
-            cur.execute("SELECT 1 FROM user_referrals WHERE referred_user_id=%s LIMIT 1", (referred_user_id,))
+            cur.execute(
+                "SELECT 1 FROM user_referrals WHERE referred_user_id=%s LIMIT 1",
+                (referred_user_id,),
+            )
             if cur.fetchone():
                 return result
 
@@ -2018,7 +2119,11 @@ def apply_signup_referral_rewards(conn, referred_user_id: int, referral_input: s
                 INSERT INTO user_referrals (referrer_user_id, referred_user_id, referral_code)
                 VALUES (%s, %s, %s)
                 """,
-                (referrer_id, referred_user_id, normalized or _normalize_referral_code(raw_ref)),
+                (
+                    referrer_id,
+                    referred_user_id,
+                    normalized or _normalize_referral_code(raw_ref),
+                ),
             )
 
             referrer_coupons = issue_user_coupons(
@@ -2130,15 +2235,15 @@ def admin_required(view):
             session["next_url"] = url_for("upload")
             return redirect(url_for("signin"))
         return view(*args, **kwargs)
+
     return wrapped
 
 
 @app.errorhandler(Exception)
 def handle_exception(exc):
-    wants_json = (
-        request.headers.get("X-Requested-With") == "XMLHttpRequest"
-        or "application/json" in request.headers.get("Accept", "")
-    )
+    wants_json = request.headers.get(
+        "X-Requested-With"
+    ) == "XMLHttpRequest" or "application/json" in request.headers.get("Accept", "")
     if isinstance(exc, HTTPException):
         app.logger.warning("HTTP error %s: %s", exc.code, exc)
         if wants_json:
@@ -2186,7 +2291,6 @@ def handle_exception(exc):
         )
     except Exception:
         return "Something went wrong. Please try again.", 500
-
 
 
 def verify_password(stored_password, provided_password):
@@ -2244,14 +2348,19 @@ def send_login_notifications(user_name, user_email, user_phone):
     if user_phone and validate_phone_number(user_phone):
         try:
             import sms
-            sms.send_sms(user_phone, f"Hi {user_name}, you have successfully signed in to Bigoh.")
+
+            sms.send_sms(
+                user_phone, f"Hi {user_name}, you have successfully signed in to Bigoh."
+            )
         except Exception:
             pass
 
     if user_email and validate_email_format(user_email):
         try:
             forwarded = request.headers.get("X-Forwarded-For", "")
-            ip_addr = forwarded.split(",")[0].strip() if forwarded else request.remote_addr
+            ip_addr = (
+                forwarded.split(",")[0].strip() if forwarded else request.remote_addr
+            )
             subject, text_body, html_body = mailer.build_signin_email(
                 user_name, ip=ip_addr
             )
@@ -2264,7 +2373,9 @@ def send_signup_confirmation(user_name, user_email):
     if not user_email or not validate_email_format(user_email):
         return
     try:
-        subject, text_body, html_body = mailer.build_signup_email(user_name, BUSINESS_NAME)
+        subject, text_body, html_body = mailer.build_signup_email(
+            user_name, BUSINESS_NAME
+        )
         mailer.send_email(user_email, subject, text_body, html_body)
     except Exception:
         pass
@@ -2527,17 +2638,27 @@ def ensure_user_verification_schema(conn) -> bool:
                 cur.execute(
                     "ALTER TABLE user_verifications ADD COLUMN password_reset_otp VARCHAR(10) NULL"
                 )
-                app.config[_schema_cache_key("user_verifications", "password_reset_otp")] = True
-            if not table_has_column(conn, "user_verifications", "password_reset_expires"):
+                app.config[
+                    _schema_cache_key("user_verifications", "password_reset_otp")
+                ] = True
+            if not table_has_column(
+                conn, "user_verifications", "password_reset_expires"
+            ):
                 cur.execute(
                     "ALTER TABLE user_verifications ADD COLUMN password_reset_expires DATETIME NULL"
                 )
-                app.config[_schema_cache_key("user_verifications", "password_reset_expires")] = True
-            if not table_has_column(conn, "user_verifications", "password_reset_attempts"):
+                app.config[
+                    _schema_cache_key("user_verifications", "password_reset_expires")
+                ] = True
+            if not table_has_column(
+                conn, "user_verifications", "password_reset_attempts"
+            ):
                 cur.execute(
                     "ALTER TABLE user_verifications ADD COLUMN password_reset_attempts INT NOT NULL DEFAULT 0"
                 )
-                app.config[_schema_cache_key("user_verifications", "password_reset_attempts")] = True
+                app.config[
+                    _schema_cache_key("user_verifications", "password_reset_attempts")
+                ] = True
 
         conn.commit()
         return True
@@ -2554,7 +2675,9 @@ def generate_phone_otp() -> str:
 
 
 def ensure_user_verification_row(cur, user_id: int):
-    cur.execute("INSERT IGNORE INTO user_verifications (user_id) VALUES (%s)", (user_id,))
+    cur.execute(
+        "INSERT IGNORE INTO user_verifications (user_id) VALUES (%s)", (user_id,)
+    )
 
 
 def update_user_verification(cur, user_id: int, fields: dict):
@@ -2607,18 +2730,22 @@ def send_email_verification(user_name: str, user_email: str, token: str):
 
 def send_phone_otp_sms(phone: str, otp: str):
     import sms
-    sms.send_sms(phone, f"Your Bigoh verification code is {otp}. It expires in 10 minutes.")
+
+    sms.send_sms(
+        phone, f"Your Bigoh verification code is {otp}. It expires in 10 minutes."
+    )
 
 
 def send_password_reset_sms(phone: str, otp: str):
     import sms
-    sms.send_sms(phone, f"Your Bigoh password reset code is {otp}. It expires in 1 minute.")
+
+    sms.send_sms(
+        phone, f"Your Bigoh password reset code is {otp}. It expires in 1 minute."
+    )
 
 
 def send_password_reset_email(user_name: str, user_email: str, otp: str):
-    subject, text_body, html_body = mailer.build_password_reset_email(
-        user_name, otp
-    )
+    subject, text_body, html_body = mailer.build_password_reset_email(user_name, otp)
     mailer.send_email(user_email, subject, text_body, html_body)
 
 
@@ -2638,7 +2765,6 @@ def _unique_username_from_email(conn, email: str) -> str:
                 return candidate
             suffix += 1
             candidate = f"{base}{suffix}"
-
 
 
 def set_site_message(message, level="warning"):
@@ -2778,7 +2904,9 @@ def ensure_reviews_table(cur):
             cur.execute(
                 "ALTER TABLE product_reviews ADD COLUMN review_photo_approved TINYINT(1) NOT NULL DEFAULT 0"
             )
-            app.config[_schema_cache_key("product_reviews", "review_photo_approved")] = True
+            app.config[
+                _schema_cache_key("product_reviews", "review_photo_approved")
+            ] = True
         return True
     except Exception:
         return False
@@ -2883,7 +3011,9 @@ def get_product_reviews(conn, product_id, viewer_name=None):
                 user_name = str(_row_at(r, 0, "") or "").strip()
                 if not user_name or user_name in verified_map:
                     continue
-                cur.execute("SELECT id FROM users WHERE username=%s LIMIT 1", (user_name,))
+                cur.execute(
+                    "SELECT id FROM users WHERE username=%s LIMIT 1", (user_name,)
+                )
                 user_row = cur.fetchone()
                 user_id = _row_at(user_row, 0, None) if user_row else None
                 if not user_id:
@@ -2909,8 +3039,7 @@ def get_product_reviews(conn, product_id, viewer_name=None):
                 review_photo = _row_at(r, 5, "")
                 photo_approved = bool(_row_at(r, 6, 0))
                 is_owner = (
-                    bool(viewer_key)
-                    and _normalize_user_name(user_name) == viewer_key
+                    bool(viewer_key) and _normalize_user_name(user_name) == viewer_key
                 )
                 photo_pending = bool(review_photo and (not photo_approved) and is_owner)
                 reviews.append(
@@ -2919,7 +3048,9 @@ def get_product_reviews(conn, product_id, viewer_name=None):
                         "rating": _row_at(r, 1, 0),
                         "comment": _row_at(r, 2, ""),
                         "created_at": _row_at(r, 3, ""),
-                        "verified": verified_map.get(str(user_name or "").strip(), False),
+                        "verified": verified_map.get(
+                            str(user_name or "").strip(), False
+                        ),
                         "photo": review_photo if photo_approved else "",
                         "photo_pending": photo_pending,
                         "photo_pending_path": review_photo if photo_pending else "",
@@ -3101,7 +3232,9 @@ def ensure_orders_delivery_columns(conn):
             if not table_has_column(conn, "orders", "delivered_at"):
                 cur.execute("ALTER TABLE orders ADD COLUMN delivered_at DATETIME NULL")
             if not table_has_column(conn, "orders", "status_updated_at"):
-                cur.execute("ALTER TABLE orders ADD COLUMN status_updated_at DATETIME NULL")
+                cur.execute(
+                    "ALTER TABLE orders ADD COLUMN status_updated_at DATETIME NULL"
+                )
         conn.commit()
         return True
     except Exception:
@@ -3113,7 +3246,9 @@ def ensure_products_visibility_column(conn):
     try:
         with conn.cursor() as cur:
             if not table_has_column(conn, "products", "is_hidden"):
-                cur.execute("ALTER TABLE products ADD COLUMN is_hidden TINYINT(1) NOT NULL DEFAULT 0")
+                cur.execute(
+                    "ALTER TABLE products ADD COLUMN is_hidden TINYINT(1) NOT NULL DEFAULT 0"
+                )
                 app.config[cache_key] = True
         conn.commit()
         return True
@@ -3204,7 +3339,9 @@ def send_low_stock_alerts(conn, items):
                 return
             conn.commit()
 
-            product_ids = [int(_row_at(row, 0, 0)) for row in items if _row_at(row, 0, 0)]
+            product_ids = [
+                int(_row_at(row, 0, 0)) for row in items if _row_at(row, 0, 0)
+            ]
             if not product_ids:
                 return
 
@@ -3213,7 +3350,9 @@ def send_low_stock_alerts(conn, items):
                 f"SELECT product_id, last_notified FROM stock_alerts WHERE product_id IN ({placeholders})",
                 tuple(product_ids),
             )
-            last_map = {int(_row_at(r, 0, 0)): _row_at(r, 1, None) for r in cur.fetchall() or []}
+            last_map = {
+                int(_row_at(r, 0, 0)): _row_at(r, 1, None) for r in cur.fetchall() or []
+            }
 
             now = datetime.now()
             cutoff = now - timedelta(hours=LOW_STOCK_ALERT_INTERVAL_HOURS)
@@ -3287,7 +3426,7 @@ def send_back_in_stock_alerts(conn, product_id: int, product_name: str):
             )
             html_body = (
                 f"<p>Good news!</p><p><strong>{product_name}</strong> is back in stock.</p>"
-                f"<p><a href=\"{link}\">View item</a></p>"
+                f'<p><a href="{link}">View item</a></p>'
             )
 
             sent_ids = []
@@ -3362,6 +3501,7 @@ def get_sponsored_products(conn, limit: int = 8):
     except Exception:
         return products
     return products
+
 
 def format_duration(seconds):
     try:
@@ -3445,6 +3585,7 @@ def get_flash_sale_state(conn):
 
     return state
 
+
 @app.context_processor
 def cart_count():
     cart = session.get("cart", {})
@@ -3478,7 +3619,6 @@ def cart_count():
     )
 
 
-
 def get_product(product_id):
     connection = get_db_connection()
     cursor = connection.cursor()
@@ -3508,7 +3648,6 @@ def has_verified_purchase(conn, user_id: int, product_id: int) -> bool:
             return bool(cur.fetchone())
     except Exception:
         return False
-
 
 
 # Default Home route
@@ -3582,7 +3721,9 @@ def home():
         flash_sales = flash_state["items"]
         flash_sale_active = flash_state["active"]
         flash_sale_seconds = flash_state["seconds_left"]
-        flash_sale_time_label = format_duration(flash_sale_seconds if flash_sale_active else 0)
+        flash_sale_time_label = format_duration(
+            flash_sale_seconds if flash_sale_active else 0
+        )
         flash_sale_duration_seconds = flash_state["duration_seconds"]
 
         rating_ids = []
@@ -3609,7 +3750,7 @@ def home():
         connection.close()
 
 
-#Single_item route
+# Single_item route
 @app.route("/single_item/<product_id>")
 def single(product_id):
     connection = get_db_connection()
@@ -3627,20 +3768,28 @@ def single(product_id):
         size_index = table_column_index(connection, "products", "size")
         if seller_index is not None:
             seller = _row_at(product, seller_index, "")
-        product_color = _row_at(product, color_index, "") if color_index is not None else ""
-        product_size = _row_at(product, size_index, "") if size_index is not None else ""
+        product_color = (
+            _row_at(product, color_index, "") if color_index is not None else ""
+        )
+        product_size = (
+            _row_at(product, size_index, "") if size_index is not None else ""
+        )
         color_options = _split_variant_options(product_color)
         size_options = _split_variant_options(product_size)
-        is_jersey_product = str(_row_at(product, 2, "") or "").strip().lower() == "jersey"
+        is_jersey_product = (
+            str(_row_at(product, 2, "") or "").strip().lower() == "jersey"
+        )
         selected_color = color_options[0] if color_options else ""
         selected_size = size_options[0] if size_options else ""
 
-        reviews, avg_rating, review_count, has_seed, rating_breakdown = get_product_reviews(
-            connection, product_id, session.get("key")
+        reviews, avg_rating, review_count, has_seed, rating_breakdown = (
+            get_product_reviews(connection, product_id, session.get("key"))
         )
         can_review = False
         if session.get("username"):
-            can_review = has_verified_purchase(connection, session.get("username"), product_id)
+            can_review = has_verified_purchase(
+                connection, session.get("username"), product_id
+            )
     finally:
         connection.close()
 
@@ -3686,7 +3835,10 @@ def back_in_stock_alert(product_id):
     conn = get_db_connection()
     try:
         with conn.cursor() as cur:
-            cur.execute("SELECT product_id, product_name, stock FROM products WHERE product_id=%s", (product_id,))
+            cur.execute(
+                "SELECT product_id, product_name, stock FROM products WHERE product_id=%s",
+                (product_id,),
+            )
             row = cur.fetchone()
             if not row:
                 set_site_message("Product not found.", "warning")
@@ -3741,21 +3893,33 @@ def add_product_review(product_id):
     try:
         with conn.cursor() as cur:
             if not ensure_reviews_table(cur):
-                return redirect(url_for("single", product_id=product_id, review="error"))
+                return redirect(
+                    url_for("single", product_id=product_id, review="error")
+                )
 
-            cur.execute("SELECT product_id FROM products WHERE product_id = %s", (product_id,))
+            cur.execute(
+                "SELECT product_id FROM products WHERE product_id = %s", (product_id,)
+            )
             if not cur.fetchone():
                 return redirect(url_for("home"))
 
             if not has_verified_purchase(conn, user_id, product_id):
-                return redirect(url_for("single", product_id=product_id, review="verified-only"))
+                return redirect(
+                    url_for("single", product_id=product_id, review="verified-only")
+                )
 
             photo_path = None
             photo_approved = 0
             if photo and photo.filename:
                 if not allowed_file(photo.filename):
-                    return redirect(url_for("single", product_id=product_id, review="photo-type"))
-                photo_path = _cloudinary_upload(photo, "bigoh/reviews") if USE_CLOUDINARY else None
+                    return redirect(
+                        url_for("single", product_id=product_id, review="photo-type")
+                    )
+                photo_path = (
+                    _cloudinary_upload(photo, "bigoh/reviews")
+                    if USE_CLOUDINARY
+                    else None
+                )
                 if not photo_path:
                     try:
                         photo.stream.seek(0)
@@ -3763,7 +3927,9 @@ def add_product_review(product_id):
                         pass
                     os.makedirs(REVIEW_UPLOAD_FOLDER, exist_ok=True)
                     ext = os.path.splitext(photo.filename)[1].lower()
-                    safe_name = secure_filename(os.path.splitext(photo.filename)[0]) or "review"
+                    safe_name = (
+                        secure_filename(os.path.splitext(photo.filename)[0]) or "review"
+                    )
                     token = secrets.token_hex(6)
                     filename = f"review_{product_id}_{user_id}_{safe_name}_{token}{ext}"
                     save_path = os.path.join(REVIEW_UPLOAD_FOLDER, filename)
@@ -3788,33 +3954,41 @@ def add_product_review(product_id):
 
 
 # Signup route
-@app.route('/signup', methods=['POST', 'GET'])
+@app.route("/signup", methods=["POST", "GET"])
 @rate_limit("signup")
 def signup():
-    if request.method == 'POST':
+    if request.method == "POST":
         next_from_form = request.form.get("next", "")
         if _is_safe_url(next_from_form):
             session["next_url"] = next_from_form
         try:
-            username = request.form['username']
-            email = request.form.get('email', '').strip().lower()
-            phone_raw = request.form.get('phone', '').strip()
+            username = request.form["username"]
+            email = request.form.get("email", "").strip().lower()
+            phone_raw = request.form.get("phone", "").strip()
             phone = normalize_phone_number(phone_raw)
             referral_input = (request.form.get("referral_code") or "").strip()
-            password1 = request.form['password1']
-            password2 = request.form['password2']
+            password1 = request.form["password1"]
+            password2 = request.form["password2"]
             strength_error = validate_password_strength(password1)
             if strength_error:
-                return render_template('signup.html', error=strength_error)
+                return render_template("signup.html", error=strength_error)
 
             if password1 != password2:
-                return render_template('signup.html', error='Password Do Not Match')
+                return render_template("signup.html", error="Password Do Not Match")
 
             if not email or not validate_email_format(email):
-                return render_template('signup.html', error='Please enter a valid email address.', error_field="email")
+                return render_template(
+                    "signup.html",
+                    error="Please enter a valid email address.",
+                    error_field="email",
+                )
 
             if not phone:
-                return render_template('signup.html', error='Please enter a valid phone number.', error_field="phone")
+                return render_template(
+                    "signup.html",
+                    error="Please enter a valid phone number.",
+                    error_field="phone",
+                )
 
             connection = get_db_connection()
             cursor = connection.cursor()
@@ -3823,43 +3997,64 @@ def signup():
                 cursor.execute("SELECT 1 FROM users WHERE email = %s LIMIT 1", (email,))
                 if cursor.fetchone():
                     connection.close()
-                    return render_template('signup.html', error='Email already registered. Please sign in.', error_field="email")
-                cursor.execute("SELECT 1 FROM users WHERE username = %s LIMIT 1", (username,))
+                    return render_template(
+                        "signup.html",
+                        error="Email already registered. Please sign in.",
+                        error_field="email",
+                    )
+                cursor.execute(
+                    "SELECT 1 FROM users WHERE username = %s LIMIT 1", (username,)
+                )
                 if cursor.fetchone():
                     connection.close()
-                    return render_template('signup.html', error='Username already taken. Please choose another.', error_field="username")
+                    return render_template(
+                        "signup.html",
+                        error="Username already taken. Please choose another.",
+                        error_field="username",
+                    )
             except Exception:
                 connection.close()
-                return render_template('signup.html', error='Unable to validate account details. Please try again.')
+                return render_template(
+                    "signup.html",
+                    error="Unable to validate account details. Please try again.",
+                )
 
             hashed_password = generate_password_hash(password1)
 
             now = _now_utc()
             if users_has_is_admin():
-                sql = ''' 
+                sql = """ 
                      insert into users(username, password, email, phone, is_admin, email_verified, email_verified_at) 
                      values(%s, %s, %s, %s, %s, %s, %s)
-                 '''
-                cursor.execute(sql, (username, hashed_password, email, phone, 0, 1, now))
+                 """
+                cursor.execute(
+                    sql, (username, hashed_password, email, phone, 0, 1, now)
+                )
             else:
-                sql = ''' 
+                sql = """ 
                      insert into users(username, password, email, phone, email_verified, email_verified_at) 
                      values(%s, %s, %s, %s, %s, %s)
-                 '''
+                 """
                 cursor.execute(sql, (username, hashed_password, email, phone, 1, now))
 
             try:
                 connection.commit()
             except pymysql.err.IntegrityError:
                 connection.close()
-                return render_template('signup.html', error='Email or username already registered.', error_field="both")
+                return render_template(
+                    "signup.html",
+                    error="Email or username already registered.",
+                    error_field="both",
+                )
 
             signup_coupon_result = {"applied": False, "message": ""}
             referral_result = {"applied": False, "message": ""}
             user_referral_code = ""
             try:
                 user_id = cursor.lastrowid
-                user_referral_code = ensure_user_referral_code(connection, user_id, username)
+                user_referral_code = ensure_user_referral_code(
+                    connection, user_id, username
+                )
                 with connection.cursor() as ver_cur:
                     ver_cur.execute(
                         """
@@ -3884,11 +4079,15 @@ def signup():
                         },
                     )
                 signup_coupon_result = apply_signup_coupon_rewards(connection, user_id)
-                referral_result = apply_signup_referral_rewards(connection, user_id, referral_input)
+                referral_result = apply_signup_referral_rewards(
+                    connection, user_id, referral_input
+                )
                 connection.commit()
             except Exception:
                 connection.close()
-                return render_template('signup.html', error='Signup failed. Please try again.')
+                return render_template(
+                    "signup.html", error="Signup failed. Please try again."
+                )
             connection.close()
 
             send_signup_confirmation(username, email)
@@ -3920,23 +4119,25 @@ def signup():
             return redirect(next_url or url_for("home"))
         except Exception:
             app.logger.exception("Signup error")
-            return render_template('signup.html', error='Signup failed. Please try again.')
-        
+            return render_template(
+                "signup.html", error="Signup failed. Please try again."
+            )
+
     else:
         _remember_next_url()
         prefill_email = (request.args.get("email") or "").strip().lower()
         prefill_name = (request.args.get("name") or "").strip()
         prefill_referral = (request.args.get("ref") or "").strip().upper()
         return render_template(
-            'signup.html',
+            "signup.html",
             next_url=session.get("next_url", ""),
             prefill_email=prefill_email,
             prefill_name=prefill_name,
             prefill_referral=prefill_referral,
         )
-    
 
-@app.route('/verify-email', methods=['GET'])
+
+@app.route("/verify-email", methods=["GET"])
 def verify_email():
     token = request.args.get("token", "").strip()
     if not token:
@@ -3958,7 +4159,9 @@ def verify_email():
             )
             row = cur.fetchone()
             if not row:
-                set_site_message("Verification link is invalid or already used.", "danger")
+                set_site_message(
+                    "Verification link is invalid or already used.", "danger"
+                )
                 return redirect(url_for("signin"))
             user_id = _row_at(row, 0)
             expires_at = _row_at(row, 1)
@@ -3968,7 +4171,10 @@ def verify_email():
                 session["verify_user_id"] = user_id
                 session["verify_email"] = user_email
                 session["verify_phone"] = user_phone
-                set_site_message("Verification link has expired. Please request a new one.", "warning")
+                set_site_message(
+                    "Verification link has expired. Please request a new one.",
+                    "warning",
+                )
                 return redirect(url_for("verify_phone"))
 
             cur.execute(
@@ -4015,28 +4221,32 @@ def verify_email():
     return redirect(url_for("verify_phone"))
 
 
-@app.route('/verify-phone', methods=['GET', 'POST'])
+@app.route("/verify-phone", methods=["GET", "POST"])
 def verify_phone():
     user_id = session.get("verify_user_id") or session.get("username")
     if not user_id:
         set_site_message("Please sign in to verify your account.", "warning")
         return redirect(url_for("signin"))
 
-    if request.method == 'GET':
+    if request.method == "GET":
         connection = get_db_connection()
         try:
             ensure_user_verification_schema(connection)
             verification = get_verification_state(connection, user_id)
-            if verification.get("email_verified") and verification.get("phone_verified"):
+            if verification.get("email_verified") and verification.get(
+                "phone_verified"
+            ):
                 set_site_message("Your account is already verified.", "info")
                 return redirect(url_for("signin"))
         finally:
             connection.close()
 
-    if request.method == 'POST':
+    if request.method == "POST":
         otp = (request.form.get("otp") or "").strip()
         if not otp:
-            return render_template('verify_phone.html', error="Please enter the verification code.")
+            return render_template(
+                "verify_phone.html", error="Please enter the verification code."
+            )
 
         connection = get_db_connection()
         try:
@@ -4052,14 +4262,23 @@ def verify_phone():
                 )
                 row = cur.fetchone()
                 if not row:
-                    return render_template('verify_phone.html', error="Verification code not found. Please resend.")
+                    return render_template(
+                        "verify_phone.html",
+                        error="Verification code not found. Please resend.",
+                    )
                 code = _row_at(row, 0, "")
                 expires_at = _row_at(row, 1)
                 attempts = int(_row_at(row, 2, 0) or 0)
                 if attempts >= OTP_MAX_ATTEMPTS:
-                    return render_template('verify_phone.html', error="Too many attempts. Please resend a new code.")
+                    return render_template(
+                        "verify_phone.html",
+                        error="Too many attempts. Please resend a new code.",
+                    )
                 if expires_at and expires_at < _now_utc():
-                    return render_template('verify_phone.html', error="Verification code has expired. Please resend.")
+                    return render_template(
+                        "verify_phone.html",
+                        error="Verification code has expired. Please resend.",
+                    )
                 if otp != code:
                     attempts += 1
                     update_user_verification(
@@ -4068,7 +4287,9 @@ def verify_phone():
                         {"phone_otp_attempts": attempts},
                     )
                     connection.commit()
-                    return render_template('verify_phone.html', error="Incorrect code. Please try again.")
+                    return render_template(
+                        "verify_phone.html", error="Incorrect code. Please try again."
+                    )
 
                 cur.execute(
                     """
@@ -4089,7 +4310,9 @@ def verify_phone():
                 )
             connection.commit()
         except Exception:
-            return render_template('verify_phone.html', error="Unable to verify phone. Please try again.")
+            return render_template(
+                "verify_phone.html", error="Unable to verify phone. Please try again."
+            )
         finally:
             connection.close()
 
@@ -4099,10 +4322,10 @@ def verify_phone():
         session.pop("verify_phone", None)
         return redirect(url_for("signin"))
 
-    return render_template('verify_phone.html')
+    return render_template("verify_phone.html")
 
 
-@app.route('/verify/resend', methods=['POST'])
+@app.route("/verify/resend", methods=["POST"])
 def resend_verification():
     user_id = session.get("verify_user_id") or session.get("username")
     if not user_id:
@@ -4174,18 +4397,20 @@ def resend_verification():
     return redirect(url_for("verify_phone"))
 
 
-@app.route('/add-phone', methods=['GET', 'POST'])
+@app.route("/add-phone", methods=["GET", "POST"])
 def add_phone():
     user_id = session.get("pending_user_id")
     if not user_id:
         set_site_message("Please sign in to continue.", "warning")
         return redirect(url_for("signin"))
 
-    if request.method == 'POST':
+    if request.method == "POST":
         phone_raw = (request.form.get("phone") or "").strip()
         phone = normalize_phone_number(phone_raw)
         if not phone:
-            return render_template('add_phone.html', error="Please enter a valid phone number.")
+            return render_template(
+                "add_phone.html", error="Please enter a valid phone number."
+            )
 
         connection = get_db_connection()
         user_referral_code = ""
@@ -4222,7 +4447,9 @@ def add_phone():
             )
             connection.commit()
         except Exception:
-            return render_template('add_phone.html', error="Unable to save phone number. Please try again.")
+            return render_template(
+                "add_phone.html", error="Unable to save phone number. Please try again."
+            )
         finally:
             connection.close()
 
@@ -4257,7 +4484,9 @@ def add_phone():
                 send_email_verification(username, email, token)
             except Exception:
                 pass
-            set_site_message("Phone saved. Please verify your email to continue.", "warning")
+            set_site_message(
+                "Phone saved. Please verify your email to continue.", "warning"
+            )
             session.pop("pending_user_id", None)
             return redirect(url_for("signin"))
 
@@ -4277,10 +4506,10 @@ def add_phone():
         set_site_message("Phone saved successfully.", "success")
         return redirect(next_url or url_for("home"))
 
-    return render_template('add_phone.html')
+    return render_template("add_phone.html")
 
 
-@app.route('/login/google')
+@app.route("/login/google")
 def login_google():
     if not os.getenv("GOOGLE_CLIENT_ID") or not os.getenv("GOOGLE_CLIENT_SECRET"):
         set_site_message("Google sign-in is not configured yet.", "warning")
@@ -4302,7 +4531,7 @@ def login_google():
     return oauth.google.authorize_redirect(redirect_uri)
 
 
-@app.route('/auth/google/callback')
+@app.route("/auth/google/callback")
 def auth_google_callback():
     try:
         token = oauth.google.authorize_access_token()
@@ -4350,7 +4579,10 @@ def auth_google_callback():
                 phone = _row_at(row, 3, "") or ""
             else:
                 if intent != "signup":
-                    set_site_message("No account found for that Google email. Please sign up first.", "warning")
+                    set_site_message(
+                        "No account found for that Google email. Please sign up first.",
+                        "warning",
+                    )
                     params = {"email": email, "name": display_name}
                     return redirect(url_for("signup", **params))
 
@@ -4390,10 +4622,14 @@ def auth_google_callback():
                 user_id = cur.lastrowid
                 phone = ""
                 created_new = True
-            user_referral_code = ensure_user_referral_code(connection, user_id, username)
+            user_referral_code = ensure_user_referral_code(
+                connection, user_id, username
+            )
             if created_new:
                 signup_coupon_result = apply_signup_coupon_rewards(connection, user_id)
-                referral_result = apply_signup_referral_rewards(connection, user_id, google_referral_input)
+                referral_result = apply_signup_referral_rewards(
+                    connection, user_id, google_referral_input
+                )
             connection.commit()
     except Exception:
         set_site_message("Unable to complete Google sign-in.", "danger")
@@ -4463,63 +4699,66 @@ def auth_google_callback():
 
     return redirect(next_url or url_for("home"))
 
-#Signin route
-@app.route('/signin', methods=['POST', 'GET'])
+
+# Signin route
+@app.route("/signin", methods=["POST", "GET"])
 @rate_limit("signin")
 def signin():
-    if request.method == 'POST':
+    if request.method == "POST":
         next_from_form = request.form.get("next", "")
         if _is_safe_url(next_from_form):
             session["next_url"] = next_from_form
-        username = request.form['username']
-        password = request.form['password']
+        username = request.form["username"]
+        password = request.form["password"]
         remember_me = request.form.get("remember_me") == "1"
 
         connection = get_db_connection()
 
         has_admin_col = users_has_is_admin()
         if has_admin_col:
-            sql = '''
+            sql = """
                select id, username, password, email, phone, is_admin from users where username = %s
-            '''
+            """
         else:
-            sql = '''
+            sql = """
                select * from users where username = %s
-            '''
+            """
         cursor = connection.cursor()
         identifier = (username or "").strip()
         email_identifier = identifier.lower()
         phone_identifier = normalize_phone_number(identifier)
         if has_admin_col:
-            sql = '''
+            sql = """
                select id, username, password, email, phone, is_admin
                from users
                where username = %s or email = %s or phone = %s
                limit 1
-            '''
+            """
             cursor.execute(sql, (identifier, email_identifier, phone_identifier))
         else:
-            sql = '''
+            sql = """
                select * from users
                where username = %s or email = %s or phone = %s
                limit 1
-            '''
+            """
             cursor.execute(sql, (identifier, email_identifier, phone_identifier))
         user = cursor.fetchone()
 
         if not user:
             connection.close()
-            return render_template('signin.html', error='Invalid Credentials')
+            return render_template("signin.html", error="Invalid Credentials")
         else:
             stored_password = user[2] if len(user) > 2 else None
             valid, needs_update = verify_password(stored_password, password)
             if not valid:
                 connection.close()
-                return render_template('signin.html', error='Invalid Credentials')
+                return render_template("signin.html", error="Invalid Credentials")
 
             if needs_update:
                 new_hash = generate_password_hash(password)
-                cursor.execute("UPDATE users SET password=%s WHERE id=%s", (new_hash, user[0]))
+                cursor.execute(
+                    "UPDATE users SET password=%s WHERE id=%s", (new_hash, user[0])
+                )
                 connection.commit()
 
             # assume users table columns are (id, username, password, email, phone)
@@ -4530,7 +4769,9 @@ def signin():
             user_email = _fetch_user_email(cursor, user_id, user_email or "")
             user_referral_code = ""
             try:
-                user_referral_code = ensure_user_referral_code(connection, user_id, user_name)
+                user_referral_code = ensure_user_referral_code(
+                    connection, user_id, user_name
+                )
                 connection.commit()
             except Exception:
                 user_referral_code = ""
@@ -4538,10 +4779,10 @@ def signin():
             connection.close()
             session.clear()
             session.permanent = remember_me
-            session['key'] = user_name
+            session["key"] = user_name
             # `pay_on_delivery` expects `session['username']` to contain user id
-            session['username'] = user_id
-            session['remember_me'] = remember_me
+            session["username"] = user_id
+            session["remember_me"] = remember_me
 
             session["is_admin"] = is_admin_identity(user_id, user_email or "")
             if user_email:
@@ -4556,19 +4797,28 @@ def signin():
 
     else:
         _remember_next_url()
-        success = "Registered Successfully, You can Signin Now" if request.args.get("signup") == "success" else ""
-        return render_template('signin.html', success=success, next_url=session.get("next_url", ""))    
+        success = (
+            "Registered Successfully, You can Signin Now"
+            if request.args.get("signup") == "success"
+            else ""
+        )
+        return render_template(
+            "signin.html", success=success, next_url=session.get("next_url", "")
+        )
 
 
-@app.route('/forgot-password', methods=['GET', 'POST'])
+@app.route("/forgot-password", methods=["GET", "POST"])
 def forgot_password():
-    if request.method == 'POST':
+    if request.method == "POST":
         phone_raw = (request.form.get("phone") or "").strip()
         email_raw = (request.form.get("email") or "").strip().lower()
         phone = normalize_phone_number(phone_raw)
         email = email_raw if validate_email_format(email_raw) else ""
         if not phone and not email:
-            return render_template('forgot_password.html', error="Please enter a valid phone number or email.")
+            return render_template(
+                "forgot_password.html",
+                error="Please enter a valid phone number or email.",
+            )
 
         connection = get_db_connection()
         user_id = None
@@ -4577,9 +4827,15 @@ def forgot_password():
             ensure_user_verification_schema(connection)
             with connection.cursor() as cur:
                 if phone:
-                    cur.execute("SELECT id, username FROM users WHERE phone=%s LIMIT 1", (phone,))
+                    cur.execute(
+                        "SELECT id, username FROM users WHERE phone=%s LIMIT 1",
+                        (phone,),
+                    )
                 else:
-                    cur.execute("SELECT id, username FROM users WHERE email=%s LIMIT 1", (email,))
+                    cur.execute(
+                        "SELECT id, username FROM users WHERE email=%s LIMIT 1",
+                        (email,),
+                    )
                 row = cur.fetchone()
                 if row:
                     user_id = _row_at(row, 0)
@@ -4597,7 +4853,10 @@ def forgot_password():
                     )
             connection.commit()
         except Exception:
-            return render_template('forgot_password.html', error="Unable to start password reset. Please try again.")
+            return render_template(
+                "forgot_password.html",
+                error="Unable to start password reset. Please try again.",
+            )
         finally:
             connection.close()
 
@@ -4616,32 +4875,38 @@ def forgot_password():
         set_site_message("If that account is registered, we sent a reset code.", "info")
         return redirect(url_for("reset_password"))
 
-    return render_template('forgot_password.html')
+    return render_template("forgot_password.html")
 
 
-@app.route('/reset-password', methods=['GET', 'POST'])
+@app.route("/reset-password", methods=["GET", "POST"])
 def reset_password():
     user_id = session.get("reset_user_id")
     phone = session.get("reset_phone")
     email = session.get("reset_email")
     channel = session.get("reset_channel")
-    if request.method == 'POST':
+    if request.method == "POST":
         otp = (request.form.get("otp") or "").strip()
         password1 = request.form.get("password1")
         password2 = request.form.get("password2")
 
         if not user_id:
-            return render_template('reset_password.html', error="Please request a reset code first.")
+            return render_template(
+                "reset_password.html", error="Please request a reset code first."
+            )
 
         if not otp:
-            return render_template('reset_password.html', error="Please enter the reset code.")
+            return render_template(
+                "reset_password.html", error="Please enter the reset code."
+            )
 
         if password1 != password2:
-            return render_template('reset_password.html', error="Passwords do not match.")
+            return render_template(
+                "reset_password.html", error="Passwords do not match."
+            )
 
         strength_error = validate_password_strength(password1)
         if strength_error:
-            return render_template('reset_password.html', error=strength_error)
+            return render_template("reset_password.html", error=strength_error)
 
         connection = get_db_connection()
         try:
@@ -4657,14 +4922,23 @@ def reset_password():
                 )
                 row = cur.fetchone()
                 if not row:
-                    return render_template('reset_password.html', error="Reset code not found. Please request a new one.")
+                    return render_template(
+                        "reset_password.html",
+                        error="Reset code not found. Please request a new one.",
+                    )
                 stored_otp = _row_at(row, 0, "")
                 expires_at = _row_at(row, 1)
                 attempts = int(_row_at(row, 2, 0) or 0)
                 if attempts >= RESET_OTP_MAX_ATTEMPTS:
-                    return render_template('reset_password.html', error="Too many attempts. Please request a new code.")
+                    return render_template(
+                        "reset_password.html",
+                        error="Too many attempts. Please request a new code.",
+                    )
                 if expires_at and expires_at < _now_utc():
-                    return render_template('reset_password.html', error="Reset code has expired. Please request a new one.")
+                    return render_template(
+                        "reset_password.html",
+                        error="Reset code has expired. Please request a new one.",
+                    )
                 if otp != stored_otp:
                     update_user_verification(
                         cur,
@@ -4672,10 +4946,14 @@ def reset_password():
                         {"password_reset_attempts": attempts + 1},
                     )
                     connection.commit()
-                    return render_template('reset_password.html', error="Incorrect code. Please try again.")
+                    return render_template(
+                        "reset_password.html", error="Incorrect code. Please try again."
+                    )
 
                 new_hash = generate_password_hash(password1)
-                cur.execute("UPDATE users SET password=%s WHERE id=%s", (new_hash, user_id))
+                cur.execute(
+                    "UPDATE users SET password=%s WHERE id=%s", (new_hash, user_id)
+                )
                 update_user_verification(
                     cur,
                     user_id,
@@ -4687,7 +4965,10 @@ def reset_password():
                 )
             connection.commit()
         except Exception:
-            return render_template('reset_password.html', error="Unable to reset password. Please try again.")
+            return render_template(
+                "reset_password.html",
+                error="Unable to reset password. Please try again.",
+            )
         finally:
             connection.close()
 
@@ -4698,18 +4979,22 @@ def reset_password():
         set_site_message("Password updated. You can now sign in.", "success")
         return redirect(url_for("signin"))
 
-    return render_template('reset_password.html', phone=phone or "", email=email or "", channel=channel or "")
+    return render_template(
+        "reset_password.html",
+        phone=phone or "",
+        email=email or "",
+        channel=channel or "",
+    )
 
 
-#logout route
-@app.route('/logout')
+# logout route
+@app.route("/logout")
 def logout():
     session.clear()
-    return redirect('/signin')
+    return redirect("/signin")
 
 
-
-#Search route
+# Search route
 @app.route("/search")
 def search():
     q = request.args.get("q", "").strip()
@@ -4749,10 +5034,7 @@ def search():
     results = advanced_product_search(q, limit=120)
     tokenized_query = _tokenize_search(q)
     plain_query_tokens = [tok for tok in tokenized_query if ":" not in tok]
-    corrected_tokens = [
-        _canonical_search_term(tok)
-        for tok in plain_query_tokens
-    ]
+    corrected_tokens = [_canonical_search_term(tok) for tok in plain_query_tokens]
     corrected_query = " ".join([tok for tok in corrected_tokens if tok]).strip()
     plain_query_text = " ".join(plain_query_tokens).strip()
     did_you_mean = ""
@@ -5014,9 +5296,30 @@ def _expand_synonyms(term: str) -> list:
         "jersey": ["jerseys", "kit", "football shirt", "soccer jersey"],
         "jerseys": ["jersey", "kit", "football shirt", "soccer jersey"],
         "kit": ["jersey", "jerseys", "football shirt", "soccer jersey"],
-        "watch": ["watches", "wristwatch", "timepiece", "waches", "ladies watch", "men watch"],
-        "watches": ["watch", "wristwatch", "timepiece", "waches", "ladies watch", "men watch"],
-        "waches": ["watch", "watches", "wristwatch", "timepiece", "ladies watch", "men watch"],
+        "watch": [
+            "watches",
+            "wristwatch",
+            "timepiece",
+            "waches",
+            "ladies watch",
+            "men watch",
+        ],
+        "watches": [
+            "watch",
+            "wristwatch",
+            "timepiece",
+            "waches",
+            "ladies watch",
+            "men watch",
+        ],
+        "waches": [
+            "watch",
+            "watches",
+            "wristwatch",
+            "timepiece",
+            "ladies watch",
+            "men watch",
+        ],
         "ladies watch": ["women watch", "female watch", "watch"],
         "men watch": ["male watch", "gents watch", "watch"],
         "ladies": ["women", "female"],
@@ -5092,7 +5395,9 @@ def _category_matches_filter(category_name: str, selected_filter: str) -> bool:
 
     category_norm = _normalize_search_text(category_name)
     category_bucket = _normalize_search_text(_bucket_category_for_search(category_name))
-    selected_bucket = _normalize_search_text(_bucket_category_for_search(selected_filter))
+    selected_bucket = _normalize_search_text(
+        _bucket_category_for_search(selected_filter)
+    )
 
     return (
         category_norm == selected_norm
@@ -5129,7 +5434,9 @@ def advanced_product_search(raw_query, limit=60, include_rating_score=True):
     for tok in tokens:
         if ":" in tok:
             key, value = tok.split(":", 1)
-            key = field_aliases.get(_normalize_search_text(key), _normalize_search_text(key))
+            key = field_aliases.get(
+                _normalize_search_text(key), _normalize_search_text(key)
+            )
             value = str(value or "").strip()
             if not value:
                 continue
@@ -5188,7 +5495,9 @@ def advanced_product_search(raw_query, limit=60, include_rating_score=True):
             score_params.append(term)
 
     def add_soundex_score(field, term, weight):
-        score_parts.append(f"CASE WHEN SOUNDEX({field}) = SOUNDEX(%s) THEN {weight} ELSE 0 END")
+        score_parts.append(
+            f"CASE WHEN SOUNDEX({field}) = SOUNDEX(%s) THEN {weight} ELSE 0 END"
+        )
         score_params.append(term)
 
     def add_term_group(term, weight_scale=1.0):
@@ -5258,7 +5567,9 @@ def advanced_product_search(raw_query, limit=60, include_rating_score=True):
 
     corrected_tokens = [
         _canonical_search_term(tok)
-        for tok in (general_terms + name_terms + brand_terms + category_terms + desc_terms)
+        for tok in (
+            general_terms + name_terms + brand_terms + category_terms + desc_terms
+        )
     ]
     corrected_query = " ".join([tok for tok in corrected_tokens if tok]).strip()
     if corrected_query and corrected_query != raw_lower:
@@ -5320,13 +5631,14 @@ def advanced_product_search(raw_query, limit=60, include_rating_score=True):
     connection = get_db_connection()
     try:
         ensure_products_visibility_column(connection)
-        sql = sql.replace("{VISIBILITY_FILTER}", products_visibility_clause(connection, "p"))
+        sql = sql.replace(
+            "{VISIBILITY_FILTER}", products_visibility_clause(connection, "p")
+        )
         with connection.cursor() as cursor:
             cursor.execute(sql, score_params + where_params)
             return cursor.fetchall()
     finally:
         connection.close()
-
 
 
 def _parse_price(value):
@@ -5373,9 +5685,13 @@ def get_products_by_category(category_name, filters=None):
         ensure_products_schema(connection)
         ensure_products_visibility_column(connection)
         if isinstance(category_name, (list, tuple, set)):
-            category_names = [str(name).strip() for name in category_name if str(name).strip()]
+            category_names = [
+                str(name).strip() for name in category_name if str(name).strip()
+            ]
         else:
-            category_names = [str(category_name).strip()] if str(category_name).strip() else []
+            category_names = (
+                [str(category_name).strip()] if str(category_name).strip() else []
+            )
         if not category_names:
             return [], [], []
         category_keys = [name.lower() for name in category_names]
@@ -5632,6 +5948,7 @@ def category_electricals():
         filters=filters,
     )
 
+
 @app.route("/category/<slug>")
 def category_dynamic(slug):
     categories_list = get_category_overview()
@@ -5750,10 +6067,16 @@ def account_settings(section):
             with conn.cursor() as cur:
                 if section == "addresses":
                     if action == "add":
-                        recipient_name = str(request.form.get("recipient_name", "") or "").strip()[:120]
+                        recipient_name = str(
+                            request.form.get("recipient_name", "") or ""
+                        ).strip()[:120]
                         phone = normalize_phone_number(request.form.get("phone", ""))
-                        address_line = str(request.form.get("address_line", "") or "").strip()[:600]
-                        address_label = _normalize_address_label(request.form.get("address_label", ""))
+                        address_line = str(
+                            request.form.get("address_line", "") or ""
+                        ).strip()[:600]
+                        address_label = _normalize_address_label(
+                            request.form.get("address_label", "")
+                        )
                         make_default = request.form.get("set_as_default") == "1"
                         if not recipient_name or not phone or not address_line:
                             set_site_message(
@@ -5773,7 +6096,14 @@ def account_settings(section):
                                 (user_id, recipient_name, phone, address_line, address_label, is_default)
                                 VALUES (%s, %s, %s, %s, %s, %s)
                                 """,
-                                (user_id, recipient_name, phone, address_line, address_label, is_default),
+                                (
+                                    user_id,
+                                    recipient_name,
+                                    phone,
+                                    address_line,
+                                    address_label,
+                                    is_default,
+                                ),
                             )
                             _ensure_single_default_address(cur, user_id)
                             conn.commit()
@@ -5783,13 +6113,26 @@ def account_settings(section):
                             address_id = int(request.form.get("address_id") or 0)
                         except Exception:
                             address_id = 0
-                        recipient_name = str(request.form.get("recipient_name", "") or "").strip()[:120]
+                        recipient_name = str(
+                            request.form.get("recipient_name", "") or ""
+                        ).strip()[:120]
                         phone = normalize_phone_number(request.form.get("phone", ""))
-                        address_line = str(request.form.get("address_line", "") or "").strip()[:600]
-                        address_label = _normalize_address_label(request.form.get("address_label", ""))
+                        address_line = str(
+                            request.form.get("address_line", "") or ""
+                        ).strip()[:600]
+                        address_label = _normalize_address_label(
+                            request.form.get("address_label", "")
+                        )
                         make_default = request.form.get("set_as_default") == "1"
-                        if not address_id or not recipient_name or not phone or not address_line:
-                            set_site_message("Please provide valid address details.", "warning")
+                        if (
+                            not address_id
+                            or not recipient_name
+                            or not phone
+                            or not address_line
+                        ):
+                            set_site_message(
+                                "Please provide valid address details.", "warning"
+                            )
                         else:
                             cur.execute(
                                 """
@@ -5797,10 +6140,20 @@ def account_settings(section):
                                 SET recipient_name=%s, phone=%s, address_line=%s, address_label=%s
                                 WHERE id=%s AND user_id=%s
                                 """,
-                                (recipient_name, phone, address_line, address_label, address_id, user_id),
+                                (
+                                    recipient_name,
+                                    phone,
+                                    address_line,
+                                    address_label,
+                                    address_id,
+                                    user_id,
+                                ),
                             )
                             if make_default:
-                                cur.execute("UPDATE user_addresses SET is_default=0 WHERE user_id=%s", (user_id,))
+                                cur.execute(
+                                    "UPDATE user_addresses SET is_default=0 WHERE user_id=%s",
+                                    (user_id,),
+                                )
                                 cur.execute(
                                     "UPDATE user_addresses SET is_default=1 WHERE user_id=%s AND id=%s",
                                     (user_id, address_id),
@@ -5831,7 +6184,10 @@ def account_settings(section):
                         if not address_id:
                             set_site_message("Invalid address selected.", "warning")
                         else:
-                            cur.execute("UPDATE user_addresses SET is_default=0 WHERE user_id=%s", (user_id,))
+                            cur.execute(
+                                "UPDATE user_addresses SET is_default=0 WHERE user_id=%s",
+                                (user_id,),
+                            )
                             cur.execute(
                                 "UPDATE user_addresses SET is_default=1 WHERE user_id=%s AND id=%s",
                                 (user_id, address_id),
@@ -5844,13 +6200,15 @@ def account_settings(section):
                 elif section == "phone":
                     phone = normalize_phone_number(request.form.get("new_phone", ""))
                     if not phone:
-                        set_site_message("Please enter a valid phone number.", "warning")
+                        set_site_message(
+                            "Please enter a valid phone number.", "warning"
+                        )
                     else:
                         now = _now_utc()
                         ensure_user_verification_schema(conn)
-                        if table_has_column(conn, "users", "phone_verified") and table_has_column(
-                            conn, "users", "phone_verified_at"
-                        ):
+                        if table_has_column(
+                            conn, "users", "phone_verified"
+                        ) and table_has_column(conn, "users", "phone_verified_at"):
                             cur.execute(
                                 """
                                 UPDATE users
@@ -5860,23 +6218,31 @@ def account_settings(section):
                                 (phone, now, user_id),
                             )
                         else:
-                            cur.execute("UPDATE users SET phone=%s WHERE id=%s", (phone, user_id))
+                            cur.execute(
+                                "UPDATE users SET phone=%s WHERE id=%s",
+                                (phone, user_id),
+                            )
                         conn.commit()
                         set_site_message("Phone number updated.", "success")
                 elif section == "email":
                     email = str(request.form.get("new_email", "") or "").strip().lower()
                     if not validate_email_format(email):
-                        set_site_message("Please enter a valid email address.", "warning")
+                        set_site_message(
+                            "Please enter a valid email address.", "warning"
+                        )
                     else:
-                        cur.execute("SELECT 1 FROM users WHERE email=%s AND id<>%s LIMIT 1", (email, user_id))
+                        cur.execute(
+                            "SELECT 1 FROM users WHERE email=%s AND id<>%s LIMIT 1",
+                            (email, user_id),
+                        )
                         if cur.fetchone():
                             set_site_message("That email is already in use.", "warning")
                         else:
                             now = _now_utc()
                             ensure_user_verification_schema(conn)
-                            if table_has_column(conn, "users", "email_verified") and table_has_column(
-                                conn, "users", "email_verified_at"
-                            ):
+                            if table_has_column(
+                                conn, "users", "email_verified"
+                            ) and table_has_column(conn, "users", "email_verified_at"):
                                 cur.execute(
                                     """
                                     UPDATE users
@@ -5886,7 +6252,10 @@ def account_settings(section):
                                     (email, now, user_id),
                                 )
                             else:
-                                cur.execute("UPDATE users SET email=%s WHERE id=%s", (email, user_id))
+                                cur.execute(
+                                    "UPDATE users SET email=%s WHERE id=%s",
+                                    (email, user_id),
+                                )
                             conn.commit()
                             session["user_email"] = email
                             set_site_message("Email updated successfully.", "success")
@@ -5907,7 +6276,9 @@ def account_settings(section):
                                 (generate_password_hash(password1), user_id),
                             )
                             conn.commit()
-                            set_site_message("Password changed successfully.", "success")
+                            set_site_message(
+                                "Password changed successfully.", "success"
+                            )
             return redirect(url_for("account_settings", section=section))
 
         account_user = _get_account_user(conn, user_id)
@@ -5974,7 +6345,14 @@ def my_orders():
                 status_key = str(_row_at(row, 0, "") or "").upper()
                 status_counts[status_key] = int(_row_at(row, 1, 0) or 0)
 
-            cols = ["order_id", "status", "subtotal", "created_at", "location", "payment_method"]
+            cols = [
+                "order_id",
+                "status",
+                "subtotal",
+                "created_at",
+                "location",
+                "payment_method",
+            ]
             if has_ref:
                 cols.append("order_reference")
             if has_discount:
@@ -5989,7 +6367,9 @@ def my_orders():
             cur.execute(sql, tuple(params))
             orders = cur.fetchall() or []
 
-            order_ids = [int(_row_at(row, 0, 0) or 0) for row in orders if _row_at(row, 0, None)]
+            order_ids = [
+                int(_row_at(row, 0, 0) or 0) for row in orders if _row_at(row, 0, None)
+            ]
             items_by_order = {}
             first_product_id = {}
             image_map = {}
@@ -6039,9 +6419,13 @@ def my_orders():
                     if custom_ref:
                         reference = custom_ref
 
-                discount = float(_row_at(row, discount_idx, 0) or 0) if has_discount else 0.0
+                discount = (
+                    float(_row_at(row, discount_idx, 0) or 0) if has_discount else 0.0
+                )
                 discount_reason = (
-                    str(_row_at(row, discount_idx + 1, "") or "") if has_discount else ""
+                    str(_row_at(row, discount_idx + 1, "") or "")
+                    if has_discount
+                    else ""
                 )
 
                 item_rows = items_by_order.get(order_id, [])
@@ -6213,7 +6597,9 @@ def admin_review_photo_reject(review_id):
     conn = get_db_connection()
     try:
         with conn.cursor() as cur:
-            cur.execute("SELECT review_photo FROM product_reviews WHERE id = %s", (review_id,))
+            cur.execute(
+                "SELECT review_photo FROM product_reviews WHERE id = %s", (review_id,)
+            )
             row = cur.fetchone()
             photo_path = _row_at(row, 0, None) if row else None
             cur.execute(
@@ -6235,7 +6621,7 @@ def admin_review_photo_reject(review_id):
     return redirect(url_for("admin_review_photos"))
 
 
-#Add to cart route
+# Add to cart route
 def get_product(product_id):
     connection = get_db_connection()
     cursor = connection.cursor()
@@ -6244,13 +6630,13 @@ def get_product(product_id):
     connection.close()
     return product
 
+
 @app.route("/add_to_cart/<int:product_id>", methods=["POST"])
 @rate_limit("add_to_cart")
 def add_to_cart(product_id):
-    wants_json = (
-        request.headers.get("X-Requested-With") == "XMLHttpRequest"
-        or "application/json" in request.headers.get("Accept", "")
-    )
+    wants_json = request.headers.get(
+        "X-Requested-With"
+    ) == "XMLHttpRequest" or "application/json" in request.headers.get("Accept", "")
     try:
         qty = int(request.form.get("qty", 1))
     except ValueError:
@@ -6288,8 +6674,12 @@ def add_to_cart(product_id):
     finally:
         option_conn.close()
 
-    available_colors = _split_variant_options(_row_at(product, color_index, "") if color_index is not None else "")
-    available_sizes = _split_variant_options(_row_at(product, size_index, "") if size_index is not None else "")
+    available_colors = _split_variant_options(
+        _row_at(product, color_index, "") if color_index is not None else ""
+    )
+    available_sizes = _split_variant_options(
+        _row_at(product, size_index, "") if size_index is not None else ""
+    )
     selected_color = _select_variant_option(selected_color_input, available_colors)
     selected_size = _select_variant_option(selected_size_input, available_sizes)
 
@@ -6350,7 +6740,7 @@ def add_to_cart(product_id):
     return redirect(request.referrer or url_for("home"))
 
 
-#Cart page route
+# Cart page route
 @app.route("/cart")
 def cart():
     cart = session.get("cart", {})
@@ -6369,16 +6759,26 @@ def cart():
         total = price * int(qty)
         grand_total += total
         option_data = cart_options.get(str(pid), {})
-        selected_color = str((option_data or {}).get("color", "")).strip() if isinstance(option_data, dict) else ""
-        selected_size = str((option_data or {}).get("size", "")).strip() if isinstance(option_data, dict) else ""
+        selected_color = (
+            str((option_data or {}).get("color", "")).strip()
+            if isinstance(option_data, dict)
+            else ""
+        )
+        selected_size = (
+            str((option_data or {}).get("size", "")).strip()
+            if isinstance(option_data, dict)
+            else ""
+        )
 
-        items.append({
-            "product": product,
-            "qty": int(qty),
-            "total": total,
-            "selected_color": selected_color,
-            "selected_size": selected_size,
-        })
+        items.append(
+            {
+                "product": product,
+                "qty": int(qty),
+                "total": total,
+                "selected_color": selected_color,
+                "selected_size": selected_size,
+            }
+        )
 
     discount = 0.0
     discount_reason = ""
@@ -6485,7 +6885,6 @@ def update_cart(product_id):
     return redirect(url_for("cart"))
 
 
-
 @app.route("/remove_from_cart/<int:product_id>")
 def remove_from_cart(product_id):
     cart = session.get("cart", {})
@@ -6542,6 +6941,7 @@ def clear_cart():
                 pass
     return redirect(url_for("cart"))
 
+
 @app.route("/checkout")
 def checkout():
     return "Checkout coming soon"
@@ -6551,8 +6951,7 @@ def get_db():
     return get_db_connection()
 
 
-
-#Whatsapp route
+# Whatsapp route
 @app.route("/pay_on_delivery", methods=["POST"])
 @rate_limit("pay_on_delivery")
 def pay_on_delivery():
@@ -6600,7 +6999,21 @@ def pay_on_delivery():
 
     cur.execute("SELECT username, email, phone FROM users WHERE id=%s", (user_id,))
     u = cur.fetchone()
-    username, email, phone = u if u else ("Customer", "", "")
+    # If the session contains a user id that no longer exists in the users
+    # table, abort the checkout rather than inserting an invalid foreign key.
+    if not u:
+        app.logger.warning(
+            "pay_on_delivery: session user_id %s not found in users table", user_id
+        )
+        cur.close()
+        conn.close()
+        # Clear the stale session identity and send user to sign-in.
+        session.pop("username", None)
+        set_site_message("Your account was not found. Please sign in.", "warning")
+        session["next_url"] = request.referrer or url_for("home")
+        return redirect(url_for("signin"))
+
+    username, email, phone = u
     email = email or ""
     phone = phone or ""
 
@@ -6624,15 +7037,29 @@ def pay_on_delivery():
             cart_options.pop(pid, None)
             stock_issue = True
             continue
-        available_colors = _split_variant_options(_row_at(p, color_index, "") if color_index is not None else "")
-        available_sizes = _split_variant_options(_row_at(p, size_index, "") if size_index is not None else "")
-        saved_option = cart_options.get(pid, {}) if isinstance(cart_options.get(pid, {}), dict) else {}
+        available_colors = _split_variant_options(
+            _row_at(p, color_index, "") if color_index is not None else ""
+        )
+        available_sizes = _split_variant_options(
+            _row_at(p, size_index, "") if size_index is not None else ""
+        )
+        saved_option = (
+            cart_options.get(pid, {})
+            if isinstance(cart_options.get(pid, {}), dict)
+            else {}
+        )
         if single_pid and pid == single_pid:
-            chosen_color = _select_variant_option(single_selected_color, available_colors)
+            chosen_color = _select_variant_option(
+                single_selected_color, available_colors
+            )
             chosen_size = _select_variant_option(single_selected_size, available_sizes)
         else:
-            chosen_color = _select_variant_option(saved_option.get("color", ""), available_colors)
-            chosen_size = _select_variant_option(saved_option.get("size", ""), available_sizes)
+            chosen_color = _select_variant_option(
+                saved_option.get("color", ""), available_colors
+            )
+            chosen_size = _select_variant_option(
+                saved_option.get("size", ""), available_sizes
+            )
         if chosen_color or chosen_size:
             cart_options[pid] = {"color": chosen_color, "size": chosen_size}
         else:
@@ -6652,7 +7079,10 @@ def pay_on_delivery():
     if stock_issue:
         session["cart"] = updated_cart
         session["cart_options"] = cart_options
-        set_site_message("Some items are out of stock or limited. Please review your cart.", "warning")
+        set_site_message(
+            "Some items are out of stock or limited. Please review your cart.",
+            "warning",
+        )
         cur.close()
         conn.close()
         return redirect(url_for("cart"))
@@ -6666,8 +7096,12 @@ def pay_on_delivery():
         if not p:
             continue
 
-        name = p[1]                 # product name index
-        option_data = cart_options.get(pid, {}) if isinstance(cart_options.get(pid, {}), dict) else {}
+        name = p[1]  # product name index
+        option_data = (
+            cart_options.get(pid, {})
+            if isinstance(cart_options.get(pid, {}), dict)
+            else {}
+        )
         selected_color = str(option_data.get("color", "")).strip()
         selected_size = str(option_data.get("size", "")).strip()
         variant_parts = []
@@ -6676,20 +7110,22 @@ def pay_on_delivery():
         if selected_size:
             variant_parts.append(f"Size: {selected_size}")
         display_name = f"{name} ({', '.join(variant_parts)})" if variant_parts else name
-        unit_price = float(p[4])    # price index
+        unit_price = float(p[4])  # price index
         qty = int(qty)
         line_total = unit_price * qty
         subtotal += line_total
 
-        order_items.append({
-            "product_id": int(pid),
-            "product_name": display_name,
-            "selected_color": selected_color,
-            "selected_size": selected_size,
-            "unit_price": unit_price,
-            "quantity": qty,
-            "line_total": line_total
-        })
+        order_items.append(
+            {
+                "product_id": int(pid),
+                "product_name": display_name,
+                "selected_color": selected_color,
+                "selected_size": selected_size,
+                "unit_price": unit_price,
+                "quantity": qty,
+                "line_total": line_total,
+            }
+        )
 
     if not order_items:
         cur.close()
@@ -6700,7 +7136,9 @@ def pay_on_delivery():
     discount = 0.0
     discount_reason = ""
     applied_coupon = None
-    discount, discount_reason, _, applied_coupon = calculate_checkout_discount(conn, user_id, subtotal)
+    discount, discount_reason, _, applied_coupon = calculate_checkout_discount(
+        conn, user_id, subtotal
+    )
     total_after_discount = max(0.0, subtotal - discount)
 
     # 6) Store order in DB
@@ -6710,7 +7148,15 @@ def pay_on_delivery():
             INSERT INTO orders (user_id, location, payment_method, status, subtotal, discount, discount_reason)
             VALUES (%s, %s, %s, %s, %s, %s, %s)
             """,
-            (user_id, location, "PAY_ON_DELIVERY", "PENDING", total_after_discount, discount, discount_reason),
+            (
+                user_id,
+                location,
+                "PAY_ON_DELIVERY",
+                "PENDING",
+                total_after_discount,
+                discount,
+                discount_reason,
+            ),
         )
     else:
         cur.execute(
@@ -6732,7 +7178,14 @@ def pay_on_delivery():
                (order_id, product_id, product_name, unit_price, quantity, line_total)
                VALUES (%s, %s, %s, %s, %s, %s)
             """,
-            (order_id, it["product_id"], it["product_name"], it["unit_price"], it["quantity"], it["line_total"])
+            (
+                order_id,
+                it["product_id"],
+                it["product_name"],
+                it["unit_price"],
+                it["quantity"],
+                it["line_total"],
+            ),
         )
     if applied_coupon and discount > 0:
         coupon_consumed = consume_user_coupon(cur, applied_coupon.get("id"), order_id)
@@ -6767,8 +7220,10 @@ def pay_on_delivery():
         lines.append(f"Order Ref: {order_reference}")
     lines.append(f"Order ID: #{order_id}")
     lines.append(f"Customer: {username}")
-    if phone: lines.append(f"Phone: {phone}")
-    if email: lines.append(f"Email: {email}")
+    if phone:
+        lines.append(f"Phone: {phone}")
+    if email:
+        lines.append(f"Email: {email}")
     lines.append("")
     lines.append(f"Delivery Location: {location}")
     lines.append("")
@@ -6778,7 +7233,9 @@ def pay_on_delivery():
     for it in order_items:
         link = url_for("single", product_id=it["product_id"], _external=True)
         lines.append(f"{n}. {it['product_name']}")
-        lines.append(f"   Qty: {it['quantity']} | Unit: KES {it['unit_price']:,.2f} | Line: KES {it['line_total']:,.2f}")
+        lines.append(
+            f"   Qty: {it['quantity']} | Unit: KES {it['unit_price']:,.2f} | Line: KES {it['line_total']:,.2f}"
+        )
         lines.append(f"   Link: {link}")
         n += 1
 
@@ -6805,9 +7262,7 @@ def pay_on_delivery():
     return redirect(url_for("order_confirmation", order_id=order_id))
 
 
-
-
-#Upload route
+# Upload route
 @app.route("/upload", methods=["GET", "POST"])
 @admin_required
 def upload():
@@ -6941,15 +7396,16 @@ def upload():
             submitted_category="",
         )
 
-    return render_template("upload.html", categories=categories_list, submitted_category="")
+    return render_template(
+        "upload.html", categories=categories_list, submitted_category=""
+    )
 
 
 @app.route("/order/<int:order_id>/tracking")
 def order_tracking(order_id):
-    wants_json = (
-        request.headers.get("X-Requested-With") == "XMLHttpRequest"
-        or "application/json" in request.headers.get("Accept", "")
-    )
+    wants_json = request.headers.get(
+        "X-Requested-With"
+    ) == "XMLHttpRequest" or "application/json" in request.headers.get("Accept", "")
     if not session.get("username") and not session.get("is_admin"):
         if wants_json:
             return jsonify(ok=False, message="Please sign in first."), 401
@@ -7135,7 +7591,14 @@ def order_confirmation(order_id):
     has_discount = orders_has_discount()
     try:
         with conn.cursor() as cur:
-            cols = ["order_id", "user_id", "location", "payment_method", "status", "subtotal"]
+            cols = [
+                "order_id",
+                "user_id",
+                "location",
+                "payment_method",
+                "status",
+                "subtotal",
+            ]
             if has_discount:
                 cols.extend(["discount", "discount_reason"])
             if has_ref:
@@ -7183,7 +7646,9 @@ def order_confirmation(order_id):
     issued_at = datetime.now()
     qr_payload = f"INVOICE|{reference}|ORDER:{order_id}|TOTAL:{float(order[5] or 0):.2f}|DATE:{issued_at.strftime('%Y-%m-%d')}"
     qr_data_uri = _make_qr_data_uri(qr_payload)
-    scu_info = _build_scu_info(order_id, reference, issued_at, items, float(order[5] or 0))
+    scu_info = _build_scu_info(
+        order_id, reference, issued_at, items, float(order[5] or 0)
+    )
     return render_template(
         "order_confirmation.html",
         order=order,
@@ -7209,7 +7674,14 @@ def order_receipt(order_id):
     has_discount = orders_has_discount()
     try:
         with conn.cursor() as cur:
-            cols = ["order_id", "user_id", "location", "payment_method", "status", "subtotal"]
+            cols = [
+                "order_id",
+                "user_id",
+                "location",
+                "payment_method",
+                "status",
+                "subtotal",
+            ]
             if has_ref:
                 cols.append("order_reference")
             if has_discount:
@@ -7277,7 +7749,9 @@ def order_receipt(order_id):
     is_paid = str(_row_at(order, 4, "") or "").upper() == "COMPLETED"
     payment_method = str(_row_at(order, 3, "") or "")
     if is_paid:
-        payment_details_lines = [line.strip() for line in PAYMENT_DETAILS_LINES.splitlines() if line.strip()]
+        payment_details_lines = [
+            line.strip() for line in PAYMENT_DETAILS_LINES.splitlines() if line.strip()
+        ]
     else:
         payment_details_lines = [
             f"Payment method: {payment_method or 'Cash on Delivery'}",
@@ -7299,7 +7773,9 @@ def order_receipt(order_id):
 
     receipt_state_label = "PAID" if is_paid else "PAYMENT PENDING"
     document_title = "Receipt" if is_paid else "Invoice"
-    due_date_label = receipt_date.strftime("%A, %B %d, %Y") if is_paid else "Pay on delivery"
+    due_date_label = (
+        receipt_date.strftime("%A, %B %d, %Y") if is_paid else "Pay on delivery"
+    )
     return render_template(
         "receipt.html",
         order=order,
@@ -7327,7 +7803,6 @@ def order_receipt(order_id):
         payment_details_lines=payment_details_lines,
         transactions=transactions,
     )
-
 
 
 # Admin dashboard route
@@ -7375,13 +7850,42 @@ def admin_dashboard():
         metrics["users"] = _scalar(cur, "SELECT COUNT(*) FROM users", default=0)
         metrics["products"] = _scalar(cur, "SELECT COUNT(*) FROM products", default=0)
         metrics["orders"] = _scalar(cur, "SELECT COUNT(*) FROM orders", default=0)
-        metrics["revenue"] = _scalar(cur, "SELECT COALESCE(SUM(subtotal), 0) FROM orders", default=0.0)
-        metrics["quantity"] = _scalar(cur, "SELECT COALESCE(SUM(quantity), 0) FROM order_items", default=0)
-        metrics["pending"] = _scalar(cur, "SELECT COUNT(*) FROM orders WHERE status = %s", ("PENDING",), default=0)
-        metrics["processing"] = _scalar(cur, "SELECT COUNT(*) FROM orders WHERE status = %s", ("PROCESSING",), default=0)
-        metrics["delivered"] = _scalar(cur, "SELECT COUNT(*) FROM orders WHERE status = %s", ("DELIVERED",), default=0)
-        metrics["completed"] = _scalar(cur, "SELECT COUNT(*) FROM orders WHERE status = %s", ("COMPLETED",), default=0)
-        metrics["cancelled"] = _scalar(cur, "SELECT COUNT(*) FROM orders WHERE status = %s", ("CANCELLED",), default=0)
+        metrics["revenue"] = _scalar(
+            cur, "SELECT COALESCE(SUM(subtotal), 0) FROM orders", default=0.0
+        )
+        metrics["quantity"] = _scalar(
+            cur, "SELECT COALESCE(SUM(quantity), 0) FROM order_items", default=0
+        )
+        metrics["pending"] = _scalar(
+            cur,
+            "SELECT COUNT(*) FROM orders WHERE status = %s",
+            ("PENDING",),
+            default=0,
+        )
+        metrics["processing"] = _scalar(
+            cur,
+            "SELECT COUNT(*) FROM orders WHERE status = %s",
+            ("PROCESSING",),
+            default=0,
+        )
+        metrics["delivered"] = _scalar(
+            cur,
+            "SELECT COUNT(*) FROM orders WHERE status = %s",
+            ("DELIVERED",),
+            default=0,
+        )
+        metrics["completed"] = _scalar(
+            cur,
+            "SELECT COUNT(*) FROM orders WHERE status = %s",
+            ("COMPLETED",),
+            default=0,
+        )
+        metrics["cancelled"] = _scalar(
+            cur,
+            "SELECT COUNT(*) FROM orders WHERE status = %s",
+            ("CANCELLED",),
+            default=0,
+        )
         repeat_customers = _scalar(
             cur,
             """
@@ -7487,8 +7991,7 @@ def admin_dashboard():
                 WHERE stock <= %s
                 ORDER BY stock ASC, product_id DESC
                 LIMIT 6
-                """
-                ,
+                """,
                 (LOW_STOCK_THRESHOLD,),
             )
             low_stock = cur.fetchall() or []
@@ -7503,7 +8006,9 @@ def admin_dashboard():
         try:
             if ensure_active_sessions_table(cur):
                 conn.commit()
-                cutoff = datetime.now() - timedelta(minutes=ACTIVE_SESSION_WINDOW_MINUTES)
+                cutoff = datetime.now() - timedelta(
+                    minutes=ACTIVE_SESSION_WINDOW_MINUTES
+                )
                 active_count = _scalar(
                     cur,
                     "SELECT COUNT(*) FROM active_sessions WHERE last_seen >= %s",
@@ -7528,7 +8033,9 @@ def admin_dashboard():
                             "username": _row_at(row, 0, "") or "Guest",
                             "user_id": _row_at(row, 1, None),
                             "ip": _row_at(row, 2, "-"),
-                            "last_seen": last_seen.strftime("%H:%M") if last_seen else "-",
+                            "last_seen": last_seen.strftime("%H:%M")
+                            if last_seen
+                            else "-",
                             "path": _row_at(row, 4, "-"),
                         }
                     )
@@ -7550,7 +8057,11 @@ def admin_dashboard():
                 now = datetime.now()
                 if flash_sale_active and flash_sale_duration_seconds <= 0:
                     flash_sale_active = False
-                if flash_sale_active and flash_sale_duration_seconds > 0 and ends_at is None:
+                if (
+                    flash_sale_active
+                    and flash_sale_duration_seconds > 0
+                    and ends_at is None
+                ):
                     ends_at = now + timedelta(seconds=flash_sale_duration_seconds)
                     cur.execute(
                         "UPDATE flash_sale_settings SET ends_at=%s WHERE id=1",
@@ -7578,7 +8089,9 @@ def admin_dashboard():
                 cur.execute(
                     "SELECT product_id FROM flash_sale_items WHERE is_active = 1"
                 )
-                flash_selected_ids = [int(_row_at(row, 0, 0)) for row in cur.fetchall() or []]
+                flash_selected_ids = [
+                    int(_row_at(row, 0, 0)) for row in cur.fetchall() or []
+                ]
 
                 cur.execute(
                     """
@@ -7823,7 +8336,11 @@ def admin_flash_sale():
                 now = datetime.now()
                 if flash_sale_active and flash_sale_duration_seconds <= 0:
                     flash_sale_active = False
-                if flash_sale_active and flash_sale_duration_seconds > 0 and ends_at is None:
+                if (
+                    flash_sale_active
+                    and flash_sale_duration_seconds > 0
+                    and ends_at is None
+                ):
                     ends_at = now + timedelta(seconds=flash_sale_duration_seconds)
                     cur.execute(
                         "UPDATE flash_sale_settings SET ends_at=%s WHERE id=1",
@@ -7851,7 +8368,9 @@ def admin_flash_sale():
                 cur.execute(
                     "SELECT product_id FROM flash_sale_items WHERE is_active = 1"
                 )
-                flash_selected_ids = [int(_row_at(row, 0, 0)) for row in cur.fetchall() or []]
+                flash_selected_ids = [
+                    int(_row_at(row, 0, 0)) for row in cur.fetchall() or []
+                ]
 
                 cur.execute(
                     """
@@ -7939,10 +8458,9 @@ def admin_sponsored_products():
 @app.route("/admin/order/<int:order_id>/status", methods=["POST"])
 @admin_required
 def admin_update_order_status(order_id):
-    wants_json = (
-        request.headers.get("X-Requested-With") == "XMLHttpRequest"
-        or "application/json" in request.headers.get("Accept", "")
-    )
+    wants_json = request.headers.get(
+        "X-Requested-With"
+    ) == "XMLHttpRequest" or "application/json" in request.headers.get("Accept", "")
     status = request.form.get("status", "").strip().upper()
     allowed = set(ORDER_STATUS_SEQUENCE)
     if status not in allowed:
@@ -7958,10 +8476,14 @@ def admin_update_order_status(order_id):
             with conn.cursor() as cur:
                 # Best effort migration; do not depend on ALTER privileges for status updates.
                 ensure_orders_delivery_columns(conn)
-                has_status_updated = table_has_column(conn, "orders", "status_updated_at")
+                has_status_updated = table_has_column(
+                    conn, "orders", "status_updated_at"
+                )
                 has_delivered_at = table_has_column(conn, "orders", "delivered_at")
 
-                cur.execute("SELECT status, user_id FROM orders WHERE order_id=%s", (order_id,))
+                cur.execute(
+                    "SELECT status, user_id FROM orders WHERE order_id=%s", (order_id,)
+                )
                 row = cur.fetchone()
                 if not row:
                     message = "Order not found."
@@ -7971,7 +8493,10 @@ def admin_update_order_status(order_id):
                     return redirect(request.referrer or url_for("admin_dashboard"))
                 prev_status = str(_row_at(row, 0, "") or "").upper()
                 user_id = _row_at(row, 1, None)
-                if status == "COMPLETED" and prev_status not in {"DELIVERED", "COMPLETED"}:
+                if status == "COMPLETED" and prev_status not in {
+                    "DELIVERED",
+                    "COMPLETED",
+                }:
                     message = "For pay-after-delivery orders, mark this order as DELIVERED before COMPLETED."
                     if wants_json:
                         return jsonify(ok=False, message=message, level="warning"), 400
@@ -7984,15 +8509,29 @@ def admin_update_order_status(order_id):
                 update_sql += " WHERE order_id=%s"
                 cur.execute(update_sql, (status, order_id))
 
-                if user_id and prev_status != status and WHATSAPP_STATUS_UPDATES_ENABLED:
-                    cur.execute("SELECT phone, username FROM users WHERE id=%s", (user_id,))
+                if (
+                    user_id
+                    and prev_status != status
+                    and WHATSAPP_STATUS_UPDATES_ENABLED
+                ):
+                    cur.execute(
+                        "SELECT phone, username FROM users WHERE id=%s", (user_id,)
+                    )
                     phone_row = cur.fetchone()
                     user_phone = _row_at(phone_row, 0, "")
                     user_name = _row_at(phone_row, 1, "") or "Customer"
-                    receipt_link = url_for("order_receipt", order_id=order_id, _external=True)
-                    message = _build_status_message(status, order_id, user_name, receipt_link)
+                    receipt_link = url_for(
+                        "order_receipt", order_id=order_id, _external=True
+                    )
+                    message = _build_status_message(
+                        status, order_id, user_name, receipt_link
+                    )
                     _send_whatsapp_message(user_phone, message)
-                if status == "DELIVERED" and prev_status != "DELIVERED" and has_delivered_at:
+                if (
+                    status == "DELIVERED"
+                    and prev_status != "DELIVERED"
+                    and has_delivered_at
+                ):
                     cur.execute(
                         "UPDATE orders SET delivered_at=NOW() WHERE order_id=%s",
                         (order_id,),
@@ -8000,12 +8539,19 @@ def admin_update_order_status(order_id):
             conn.commit()
         except Exception as exc:
             conn.rollback()
-            app.logger.exception("Failed updating order status for order_id=%s status=%s", order_id, status)
+            app.logger.exception(
+                "Failed updating order status for order_id=%s status=%s",
+                order_id,
+                status,
+            )
             detail = str(exc).lower()
             message = "Could not update order status right now."
             if "status_updated_at" in detail or "delivered_at" in detail:
                 message = "Order status columns are missing in the database. Run the latest schema migration."
-            elif "incorrect enum value" in detail or "data truncated for column 'status'" in detail:
+            elif (
+                "incorrect enum value" in detail
+                or "data truncated for column 'status'" in detail
+            ):
                 message = "Database does not allow this status value yet. Update the orders.status column allowed values."
             if wants_json:
                 return jsonify(ok=False, message=message, level="warning"), 500
@@ -8027,7 +8573,9 @@ def admin_send_receipt(order_id):
     conn = get_db_connection()
     try:
         with conn.cursor() as cur:
-            cur.execute("SELECT status, user_id FROM orders WHERE order_id=%s", (order_id,))
+            cur.execute(
+                "SELECT status, user_id FROM orders WHERE order_id=%s", (order_id,)
+            )
             row = cur.fetchone()
             status = str(_row_at(row, 0, "") or "").upper()
             user_id = _row_at(row, 1, None)
@@ -8058,7 +8606,9 @@ def admin_send_receipt(order_id):
     if ok:
         set_site_message("Receipt sent to customer via WhatsApp.", "success")
     else:
-        set_site_message("Receipt not sent. Check WhatsApp settings or phone number.", "warning")
+        set_site_message(
+            "Receipt not sent. Check WhatsApp settings or phone number.", "warning"
+        )
     return redirect(request.referrer or url_for("admin_orders"))
 
 
@@ -8112,11 +8662,19 @@ def admin_edit_product(product_id):
             product = cur.fetchone()
             if not product:
                 return redirect(url_for("admin_products"))
-            product_seller = _row_at(product, seller_index, "") if seller_index is not None else ""
-            product_color = _row_at(product, color_index, "") if color_index is not None else ""
-            product_size = _row_at(product, size_index, "") if size_index is not None else ""
+            product_seller = (
+                _row_at(product, seller_index, "") if seller_index is not None else ""
+            )
+            product_color = (
+                _row_at(product, color_index, "") if color_index is not None else ""
+            )
+            product_size = (
+                _row_at(product, size_index, "") if size_index is not None else ""
+            )
             existing_category = str(_row_at(product, 2, "") or "").strip()
-            if existing_category and not coerce_allowed_category(existing_category, categories_list):
+            if existing_category and not coerce_allowed_category(
+                existing_category, categories_list
+            ):
                 category_warning = (
                     f'Current category "{existing_category}" is not in the allowed list. '
                     "Select a valid category and save."
@@ -8169,7 +8727,11 @@ def admin_edit_product(product_id):
                 file = request.files.get("image")
                 if file and file.filename:
                     if allowed_file(file.filename):
-                        image_url = _cloudinary_upload(file, "bigoh/products") if USE_CLOUDINARY else None
+                        image_url = (
+                            _cloudinary_upload(file, "bigoh/products")
+                            if USE_CLOUDINARY
+                            else None
+                        )
                         if not image_url:
                             try:
                                 file.stream.seek(0)
@@ -8180,10 +8742,14 @@ def admin_edit_product(product_id):
                             base, ext = os.path.splitext(filename)
                             i = 1
                             final_name = filename
-                            while os.path.exists(os.path.join(app.config["UPLOAD_FOLDER"], final_name)):
+                            while os.path.exists(
+                                os.path.join(app.config["UPLOAD_FOLDER"], final_name)
+                            ):
                                 final_name = f"{base}_{i}{ext}"
                                 i += 1
-                            save_path = os.path.join(app.config["UPLOAD_FOLDER"], final_name)
+                            save_path = os.path.join(
+                                app.config["UPLOAD_FOLDER"], final_name
+                            )
                             file.save(save_path)
                             compress_product_image(save_path)
                             image_url = f"images/{final_name}"
@@ -8199,7 +8765,9 @@ def admin_edit_product(product_id):
                 if has_size:
                     set_parts.append("size=%s")
                     values.append(size)
-                set_parts.extend(["price=%s", "stock=%s", "description=%s", "image_url=%s"])
+                set_parts.extend(
+                    ["price=%s", "stock=%s", "description=%s", "image_url=%s"]
+                )
                 values.extend([price, new_stock, description, image_url])
                 if table_has_column(conn, "products", "is_hidden"):
                     set_parts.append("is_hidden=%s")
@@ -8422,7 +8990,13 @@ def admin_order_detail(order_id):
     reference = f"ZC-{order_id:06d}"
     if order and orders_has_reference() and len(order) > 5 and order[5]:
         reference = order[5]
-    return render_template("admin_order_detail.html", order=order, items=items, reference=reference, has_reference=orders_has_reference())
+    return render_template(
+        "admin_order_detail.html",
+        order=order,
+        items=items,
+        reference=reference,
+        has_reference=orders_has_reference(),
+    )
 
 
 @app.route("/admin/orders/<int:order_id>/items")
@@ -8465,11 +9039,6 @@ def admin_order_items(order_id):
 @app.route("/whoami")
 def whoami():
     return str(dict(session))
-
-
-
- 
-
 
 
 if __name__ == "__main__":
