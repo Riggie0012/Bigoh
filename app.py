@@ -2371,6 +2371,13 @@ def table_has_column(conn, table: str, column: str) -> bool:
         return False
 
 
+def products_visibility_clause(conn, alias: str = "") -> str:
+    if not table_has_column(conn, "products", "is_hidden"):
+        return "1=1"
+    column_name = f"{alias}.is_hidden" if alias else "is_hidden"
+    return f"({column_name} IS NULL OR {column_name} = 0)"
+
+
 def table_column_index(conn, table: str, column: str) -> Optional[int]:
     try:
         with conn.cursor() as cur:
