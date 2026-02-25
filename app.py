@@ -7289,6 +7289,7 @@ def upload():
                 submitted_category=selected_category,
             )
 
+
         # Basic validation
         if not product_name or not selected_category or not price:
             return render_template(
