@@ -53,6 +53,7 @@ app.secret_key = os.getenv("FLASK_SECRET_KEY")
 if not app.secret_key:
     raise RuntimeError("FLASK_SECRET_KEY is required.")
 WHATSAPP_NUMBER = os.getenv("WHATSAPP_NUMBER", "+254752370545")
+SHOES_WHATSAPP_NUMBER = os.getenv("SHOES_WHATSAPP_NUMBER", "+254710469681")
 ADMIN_USERS = {
     name.strip().lower()
     for name in os.getenv("ADMIN_USERS", "").split(",")
@@ -7024,6 +7025,7 @@ def pay_on_delivery():
     products = cur.fetchall()
 
     product_map = {str(p[0]): p for p in products}  # p[0] = product_id
+    category_index = table_column_index(conn, "products", "category")
     color_index = table_column_index(conn, "products", "color")
     size_index = table_column_index(conn, "products", "size")
 
@@ -7090,6 +7092,7 @@ def pay_on_delivery():
     # 5) Compute totals and prepare order items
     order_items = []
     subtotal = 0.0
+    has_shoes_item = False
 
     for pid, qty in cart.items():
         p = product_map.get(pid)
@@ -7097,6 +7100,9 @@ def pay_on_delivery():
             continue
 
         name = p[1]  # product name index
+        category = str(_row_at(p, category_index, _row_at(p, 2, "")) or "").strip()
+        if category.lower() == "shoes":
+            has_shoes_item = True
         option_data = (
             cart_options.get(pid, {})
             if isinstance(cart_options.get(pid, {}), dict)
@@ -7256,7 +7262,8 @@ def pay_on_delivery():
     session.pop("cart", None)
     session.pop("cart_options", None)
 
-    wa_url = f"https://wa.me/{WHATSAPP_NUMBER}?text={quote(text)}"
+    whatsapp_number = SHOES_WHATSAPP_NUMBER if has_shoes_item else WHATSAPP_NUMBER
+    wa_url = f"https://wa.me/{whatsapp_number}?text={quote(text)}"
     session["last_order_id"] = order_id
     session["last_wa_url"] = wa_url
     return redirect(url_for("order_confirmation", order_id=order_id))
