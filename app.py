@@ -6326,7 +6326,6 @@ def my_orders():
         status_filter = "ALL"
 
     has_ref = orders_has_reference()
-    has_discount = orders_has_discount()
     status_counts = {code: 0 for code, _ in ORDER_STATUS_TABS}
     orders_view = []
 
@@ -6356,8 +6355,6 @@ def my_orders():
             ]
             if has_ref:
                 cols.append("order_reference")
-            if has_discount:
-                cols.extend(["discount", "discount_reason"])
 
             sql = f"SELECT {', '.join(cols)} FROM orders WHERE user_id = %s"
             params = [user_id]
@@ -6405,7 +6402,6 @@ def my_orders():
                         image_map[int(_row_at(row, 0, 0) or 0)] = _row_at(row, 1, "")
 
             ref_idx = 6 if has_ref else None
-            discount_idx = (7 if has_ref else 6) if has_discount else None
             for row in orders:
                 order_id = int(_row_at(row, 0, 0) or 0)
                 status = str(_row_at(row, 1, "PENDING") or "PENDING").upper()
@@ -6419,15 +6415,6 @@ def my_orders():
                     custom_ref = _row_at(row, ref_idx, "")
                     if custom_ref:
                         reference = custom_ref
-
-                discount = (
-                    float(_row_at(row, discount_idx, 0) or 0) if has_discount else 0.0
-                )
-                discount_reason = (
-                    str(_row_at(row, discount_idx + 1, "") or "")
-                    if has_discount
-                    else ""
-                )
 
                 item_rows = items_by_order.get(order_id, [])
                 first_item = item_rows[0] if item_rows else None
@@ -6448,8 +6435,6 @@ def my_orders():
                         "created_at": created_at,
                         "location": location,
                         "payment_method": payment_method,
-                        "discount": discount,
-                        "discount_reason": discount_reason,
                         "first_item_name": first_name,
                         "first_item_qty": first_qty,
                         "first_item_total": first_total,
@@ -6781,29 +6766,13 @@ def cart():
             }
         )
 
-    discount = 0.0
-    discount_reason = ""
-    repeat_count = 0
-    if session.get("username"):
-        conn = get_db_connection()
-        try:
-            discount, discount_reason, repeat_count, _ = calculate_checkout_discount(
-                conn, session.get("username"), grand_total
-            )
-        finally:
-            conn.close()
-    total_after_discount = max(0.0, grand_total - discount)
+    total_amount = grand_total
 
     return render_template(
         "cart.html",
         items=items,
         grand_total=grand_total,
-        discount=discount,
-        discount_reason=discount_reason,
-        repeat_count=repeat_count,
-        total_after_discount=total_after_discount,
-        loyalty_repeat_min=LOYALTY_REPEAT_ORDERS_MIN,
-        loyalty_discount_pct=LOYALTY_REPEAT_DISCOUNT_PCT,
+        total_amount=total_amount,
     )
 
 
@@ -7138,37 +7107,13 @@ def pay_on_delivery():
         conn.close()
         return redirect(request.referrer or url_for("home"))
 
-    ensure_orders_schema(conn)
-    discount = 0.0
-    discount_reason = ""
-    applied_coupon = None
-    discount, discount_reason, _, applied_coupon = calculate_checkout_discount(
-        conn, user_id, subtotal
-    )
-    total_after_discount = max(0.0, subtotal - discount)
+    order_total = round(float(subtotal or 0), 2)
 
     # 6) Store order in DB
-    if orders_has_discount():
-        cur.execute(
-            """
-            INSERT INTO orders (user_id, location, payment_method, status, subtotal, discount, discount_reason)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
-            """,
-            (
-                user_id,
-                location,
-                "PAY_ON_DELIVERY",
-                "PENDING",
-                total_after_discount,
-                discount,
-                discount_reason,
-            ),
-        )
-    else:
-        cur.execute(
-            "INSERT INTO orders (user_id, location, payment_method, status, subtotal) VALUES (%s, %s, %s, %s, %s)",
-            (user_id, location, "PAY_ON_DELIVERY", "PENDING", total_after_discount),
-        )
+    cur.execute(
+        "INSERT INTO orders (user_id, location, payment_method, status, subtotal) VALUES (%s, %s, %s, %s, %s)",
+        (user_id, location, "PAY_ON_DELIVERY", "PENDING", order_total),
+    )
     order_id = cur.lastrowid
     order_reference = None
     if orders_has_reference():
@@ -7193,27 +7138,6 @@ def pay_on_delivery():
                 it["line_total"],
             ),
         )
-    if applied_coupon and discount > 0:
-        coupon_consumed = consume_user_coupon(cur, applied_coupon.get("id"), order_id)
-        if not coupon_consumed:
-            # Fallback if coupon was concurrently used elsewhere.
-            discount = 0.0
-            discount_reason = ""
-            total_after_discount = subtotal
-            if orders_has_discount():
-                cur.execute(
-                    """
-                    UPDATE orders
-                    SET subtotal=%s, discount=%s, discount_reason=%s
-                    WHERE order_id=%s
-                    """,
-                    (total_after_discount, discount, discount_reason, order_id),
-                )
-            else:
-                cur.execute(
-                    "UPDATE orders SET subtotal=%s WHERE order_id=%s",
-                    (total_after_discount, order_id),
-                )
     conn.commit()
     cur.close()
     conn.close()
@@ -7247,11 +7171,7 @@ def pay_on_delivery():
 
     lines.append("")
     lines.append(f"SUBTOTAL: KES {subtotal:,.2f}")
-    if discount > 0:
-        lines.append(f"COUPON DISCOUNT: -KES {discount:,.2f}")
-        if discount_reason:
-            lines.append(f"COUPON: {discount_reason}")
-    lines.append(f"TOTAL: KES {total_after_discount:,.2f}")
+    lines.append(f"TOTAL: KES {order_total:,.2f}")
     lines.append("")
     lines.append("Kindly send me payment details for my orders.")
     lines.append("Thank you.")
@@ -7596,7 +7516,6 @@ def order_confirmation(order_id):
 
     conn = get_db_connection()
     has_ref = orders_has_reference()
-    has_discount = orders_has_discount()
     try:
         with conn.cursor() as cur:
             cols = [
@@ -7607,8 +7526,6 @@ def order_confirmation(order_id):
                 "status",
                 "subtotal",
             ]
-            if has_discount:
-                cols.extend(["discount", "discount_reason"])
             if has_ref:
                 cols.append("order_reference")
 
@@ -7643,12 +7560,6 @@ def order_confirmation(order_id):
         if order[ref_idx]:
             reference = order[ref_idx]
 
-    discount = 0.0
-    discount_reason = ""
-    if order and has_discount:
-        discount_idx = 6
-        discount = float(_row_at(order, discount_idx, 0) or 0)
-        discount_reason = _row_at(order, discount_idx + 1, "")
     wa_url = session.get("last_wa_url")
     customer_name = session.get("username") or (order[1] if order else "Customer")
     issued_at = datetime.now()
@@ -7663,8 +7574,6 @@ def order_confirmation(order_id):
         items=items,
         reference=reference,
         wa_url=wa_url,
-        discount=discount,
-        discount_reason=discount_reason,
         issued_at=issued_at,
         qr_data_uri=qr_data_uri,
         scu_info=scu_info,
@@ -7679,7 +7588,6 @@ def order_receipt(order_id):
 
     conn = get_db_connection()
     has_ref = orders_has_reference()
-    has_discount = orders_has_discount()
     try:
         with conn.cursor() as cur:
             cols = [
@@ -7692,8 +7600,6 @@ def order_receipt(order_id):
             ]
             if has_ref:
                 cols.append("order_reference")
-            if has_discount:
-                cols.extend(["discount", "discount_reason"])
 
             cur.execute(
                 f"""
@@ -7743,13 +7649,6 @@ def order_receipt(order_id):
         if _row_at(order, ref_idx, ""):
             reference = _row_at(order, ref_idx, reference)
 
-    discount = 0.0
-    discount_reason = ""
-    if order and has_discount:
-        discount_idx = 6 + (1 if has_ref else 0)
-        discount = float(_row_at(order, discount_idx, 0) or 0)
-        discount_reason = _row_at(order, discount_idx + 1, "")
-
     items_total = sum(float(_row_at(it, 4, 0) or 0) for it in items)
     order_total = float(_row_at(order, 5, 0) or 0)
     receipt_date = datetime.now()
@@ -7789,8 +7688,6 @@ def order_receipt(order_id):
         order=order,
         items=items,
         reference=reference,
-        discount=discount,
-        discount_reason=discount_reason,
         items_total=items_total,
         order_total=order_total,
         customer=user,

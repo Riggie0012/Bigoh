@@ -247,12 +247,6 @@
       <div class="invoice-divider"></div>
       <div class="invoice-total">
         <div class="invoice-total-box">
-          {% if discount and discount > 0 %}
-          <div class="invoice-total-row">
-            <div>Coupon Discount</div>
-            <strong>-KES {{ "{:,.2f}".format(discount or 0) }}</strong>
-          </div>
-          {% endif %}
           <div class="invoice-total-row">
             <div>Total</div>
             <strong>KES {{ "{:,.2f}".format(order[5] or 0) }}</strong>
@@ -354,15 +348,6 @@
             </table>
           </div>
 
-          {% if discount and discount > 0 %}
-          <div class="d-flex justify-content-between align-items-center mt-3">
-            <strong>Coupon Discount</strong>
-            <strong class="text-success">-KES {{ "{:,.2f}".format(discount or 0) }}</strong>
-          </div>
-          {% if discount_reason %}
-          <div class="text-muted small mt-1">{{ discount_reason }}</div>
-          {% endif %}
-          {% endif %}
           <div class="d-flex justify-content-between align-items-center mt-2">
             <strong>Total</strong>
             <strong class="text-danger">KES {{ "{:,.2f}".format(order[5] or 0) }}</strong>

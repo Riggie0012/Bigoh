@@ -110,18 +110,9 @@
             <div class="text-muted">Subtotal</div>
             <div class="fw-bold text-danger">KES {{ "%.2f"|format(grand_total) }}</div>
           </div>
-          {% if discount and discount > 0 %}
-          <div class="d-flex justify-content-between mt-2">
-            <div class="text-muted">Coupon Discount</div>
-            <div class="fw-bold text-success">-KES {{ "%.2f"|format(discount) }}</div>
-          </div>
-          {% if discount_reason %}
-          <div class="text-muted small mt-1">{{ discount_reason }}</div>
-          {% endif %}
-          {% endif %}
           <div class="d-flex justify-content-between mt-2">
             <div class="text-muted">Total</div>
-            <div class="fw-bold text-danger">KES {{ "%.2f"|format(total_after_discount) }}</div>
+            <div class="fw-bold text-danger">KES {{ "%.2f"|format(total_amount) }}</div>
           </div>
 
           <div class="trust-strip mt-3">

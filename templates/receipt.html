@@ -237,10 +237,6 @@
         <td>Ksh 0.00</td>
       </tr>
       <tr>
-        <td>Coupon Discount</td>
-        <td>{% if discount and discount > 0 %}-Ksh {{ "{:,.2f}".format(discount or 0) }}{% else %}Ksh 0.00{% endif %}</td>
-      </tr>
-      <tr>
         <td>Total</td>
         <td><strong>Ksh {{ "{:,.2f}".format(order_total or 0) }}</strong></td>
       </tr>
