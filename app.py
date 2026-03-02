@@ -118,6 +118,14 @@ WHATSAPP_RECEIPTS_ENABLED = os.getenv("WHATSAPP_RECEIPTS_ENABLED", "0") == "1"
 WHATSAPP_STATUS_UPDATES_ENABLED = (
     os.getenv("WHATSAPP_STATUS_UPDATES_ENABLED", "1") == "1"
 )
+try:
+    FLASH_SALE_AUTO_UPDATE_HOURS = int(
+        os.getenv("FLASH_SALE_AUTO_UPDATE_HOURS", "6") or 6
+    )
+except ValueError:
+    FLASH_SALE_AUTO_UPDATE_HOURS = 6
+FLASH_SALE_AUTO_UPDATE_HOURS = max(1, FLASH_SALE_AUTO_UPDATE_HOURS)
+FLASH_SALE_AUTO_UPDATE_SECONDS = FLASH_SALE_AUTO_UPDATE_HOURS * 3600
 CRON_SECRET = os.getenv("CRON_SECRET", "").strip()
 ABANDONED_CART_HOURS = int(os.getenv("ABANDONED_CART_HOURS", "4"))
 REVIEW_REQUEST_DELAY_HOURS = int(os.getenv("REVIEW_REQUEST_DELAY_HOURS", "24"))
@@ -3131,8 +3139,9 @@ def ensure_flash_sale_tables(cur):
             cur.execute(
                 """
                 INSERT INTO flash_sale_settings (id, is_active, duration_seconds, ends_at)
-                VALUES (1, 0, 0, NULL)
-                """
+                VALUES (%s, %s, %s, %s)
+                """,
+                (1, 0, FLASH_SALE_AUTO_UPDATE_SECONDS, None),
             )
         return True
     except Exception:
@@ -3539,10 +3548,27 @@ def get_flash_sale_state(conn):
             is_active = bool(_row_at(row, 0, 0)) if row else False
             duration_seconds = int(_row_at(row, 1, 0) or 0) if row else 0
             ends_at = _row_at(row, 2, None) if row else None
+            duration_migrated = False
+
+            if duration_seconds != FLASH_SALE_AUTO_UPDATE_SECONDS:
+                duration_seconds = FLASH_SALE_AUTO_UPDATE_SECONDS
+                cur.execute(
+                    "UPDATE flash_sale_settings SET duration_seconds=%s WHERE id=1",
+                    (duration_seconds,),
+                )
+                conn.commit()
+                duration_migrated = True
 
             now = datetime.now()
             if is_active and duration_seconds <= 0:
                 is_active = False
+            if is_active and duration_migrated:
+                ends_at = now + timedelta(seconds=duration_seconds)
+                cur.execute(
+                    "UPDATE flash_sale_settings SET ends_at=%s WHERE id=1",
+                    (ends_at,),
+                )
+                conn.commit()
             if is_active and duration_seconds > 0 and ends_at is None:
                 ends_at = now + timedelta(seconds=duration_seconds)
                 cur.execute(
@@ -6013,6 +6039,42 @@ def flash_sales_page():
     )
 
 
+@app.route("/api/flash-sales/state")
+def flash_sales_state_api():
+    conn = get_db_connection()
+    try:
+        flash_state = get_flash_sale_state(conn)
+    finally:
+        conn.close()
+
+    item_ids = []
+    for row in flash_state.get("items") or []:
+        try:
+            item_id = int(_row_at(row, 0, 0) or 0)
+        except Exception:
+            item_id = 0
+        if item_id:
+            item_ids.append(item_id)
+
+    active = bool(flash_state.get("active"))
+    seconds_left = int(flash_state.get("seconds_left", 0) or 0)
+    if seconds_left < 0:
+        seconds_left = 0
+    if not active:
+        seconds_left = 0
+
+    return jsonify(
+        {
+            "ok": True,
+            "active": active,
+            "seconds_left": seconds_left,
+            "time_label": format_duration(seconds_left),
+            "item_ids": item_ids,
+            "item_count": len(item_ids),
+        }
+    )
+
+
 @app.route("/about")
 def about():
     return render_template("about.html")
@@ -7740,7 +7802,7 @@ def admin_dashboard():
     flash_sale_time_label = format_duration(0)
     flash_selected_ids = []
     flash_products = []
-    flash_duration_hours = 0
+    flash_duration_hours = FLASH_SALE_AUTO_UPDATE_HOURS
     flash_duration_minutes = 0
     repeat_customers = 0
     conversion_rate = 0.0
@@ -7988,8 +8050,8 @@ def admin_dashboard():
                 flash_sale_time_label = format_duration(
                     seconds_left if flash_sale_active else 0
                 )
-                flash_duration_hours = flash_sale_duration_seconds // 3600
-                flash_duration_minutes = (flash_sale_duration_seconds % 3600) // 60
+                flash_duration_hours = FLASH_SALE_AUTO_UPDATE_HOURS
+                flash_duration_minutes = 0
 
                 cur.execute(
                     "SELECT product_id FROM flash_sale_items WHERE is_active = 1"
@@ -8162,21 +8224,7 @@ def admin_cloudinary_cleanup():
 def admin_flash_sale():
     if request.method == "POST":
         is_active = request.form.get("is_active") == "on"
-
-        try:
-            duration_hours = int(request.form.get("duration_hours", "0"))
-        except ValueError:
-            duration_hours = 0
-        try:
-            duration_minutes = int(request.form.get("duration_minutes", "0"))
-        except ValueError:
-            duration_minutes = 0
-
-        duration_hours = max(duration_hours, 0)
-        duration_minutes = max(duration_minutes, 0)
-        duration_seconds = (duration_hours * 3600) + (duration_minutes * 60)
-        if is_active and duration_seconds <= 0:
-            is_active = False
+        duration_seconds = FLASH_SALE_AUTO_UPDATE_SECONDS
 
         selected_ids = []
         for raw in request.form.getlist("flash_products"):
@@ -8221,7 +8269,7 @@ def admin_flash_sale():
     conn = get_db_connection()
     flash_sale_active = False
     flash_sale_time_label = format_duration(0)
-    flash_duration_hours = 0
+    flash_duration_hours = FLASH_SALE_AUTO_UPDATE_HOURS
     flash_duration_minutes = 0
     flash_selected_ids = []
     flash_products = []
@@ -8267,8 +8315,8 @@ def admin_flash_sale():
                 flash_sale_time_label = format_duration(
                     seconds_left if flash_sale_active else 0
                 )
-                flash_duration_hours = flash_sale_duration_seconds // 3600
-                flash_duration_minutes = (flash_sale_duration_seconds % 3600) // 60
+                flash_duration_hours = FLASH_SALE_AUTO_UPDATE_HOURS
+                flash_duration_minutes = 0
 
                 cur.execute(
                     "SELECT product_id FROM flash_sale_items WHERE is_active = 1"

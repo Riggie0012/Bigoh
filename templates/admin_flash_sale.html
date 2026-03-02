@@ -195,7 +195,7 @@
       <div class="d-flex justify-content-between align-items-center mb-3">
         <div>
           <h3 class="mb-1">Flash Sale Control</h3>
-          <div class="text-muted">Activate and schedule flash sales with selected products.</div>
+          <div class="text-muted">Activate flash sales with selected products. Sale cycle is fixed at {{ flash_duration_hours }} hours.</div>
         </div>
         <div class="pill">{{ "Active" if flash_sale_active else "Inactive" }}</div>
       </div>
@@ -210,12 +210,8 @@
               Activate Flash Sale
             </label>
             <label>
-              Runtime hours
-              <input type="number" min="0" name="duration_hours" value="{{ flash_duration_hours }}">
-            </label>
-            <label>
-              Runtime minutes
-              <input type="number" min="0" max="59" name="duration_minutes" value="{{ flash_duration_minutes }}">
+              Runtime
+              <input type="text" value="{{ flash_duration_hours }} hours (fixed)" readonly>
             </label>
             <div class="flash-actions">
               <button class="btn btn-sm btn-primary" type="submit">Save Flash Sale</button>

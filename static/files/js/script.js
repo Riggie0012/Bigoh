@@ -15,18 +15,130 @@ function initFlashTimers() {
             const hours = Math.floor(remaining / 3600);
             const minutes = Math.floor((remaining % 3600) / 60);
             const seconds = remaining % 60;
+            timer.setAttribute("data-countdown", String(Math.max(0, remaining)));
             label.textContent = `${pad(hours)}h : ${pad(minutes)}m : ${pad(seconds)}s`;
         };
         render();
         const interval = setInterval(() => {
             remaining -= 1;
             if (remaining < 0) {
+                timer.setAttribute("data-countdown", "0");
                 clearInterval(interval);
                 return;
             }
             render();
         }, 1000);
     });
+}
+
+function initFlashSalesAutoRefresh() {
+    const wrap = document.querySelector(".flash-sale-wrap[data-flash-state-url]");
+    if (!wrap || !window.fetch) {
+        return;
+    }
+
+    const stateUrl = wrap.getAttribute("data-flash-state-url");
+    if (!stateUrl) {
+        return;
+    }
+
+    const timer = wrap.querySelector(".flash-sale-timer[data-countdown]");
+    const titleState = wrap.querySelector(".flash-sale-title span");
+    if (!timer || !titleState) {
+        return;
+    }
+
+    const collectItemIds = () => {
+        const ids = [];
+        wrap.querySelectorAll(".flash-sale-list a[href*='/single_item/']").forEach((link) => {
+            const href = link.getAttribute("href") || "";
+            const match = href.match(/\/single_item\/(\d+)/);
+            if (!match) {
+                return;
+            }
+            const id = parseInt(match[1], 10);
+            if (Number.isFinite(id)) {
+                ids.push(id);
+            }
+        });
+        return ids.join(",");
+    };
+
+    let lastActive = /live now/i.test(titleState.textContent || "");
+    let lastItemSignature = collectItemIds();
+    let polling = false;
+    let zeroSynced = false;
+
+    const syncFromState = async () => {
+        if (polling) {
+            return;
+        }
+        polling = true;
+        try {
+            const response = await fetch(stateUrl, {
+                headers: { "X-Requested-With": "XMLHttpRequest" },
+                cache: "no-store",
+            });
+            if (!response.ok) {
+                return;
+            }
+            const payload = await response.json();
+            if (!payload || payload.ok !== true) {
+                return;
+            }
+
+            const active = !!payload.active;
+            const seconds = Math.max(0, parseInt(payload.seconds_left, 10) || 0);
+            const incomingIds = Array.isArray(payload.item_ids) ? payload.item_ids : [];
+            const incomingSignature = incomingIds
+                .map((value) => parseInt(value, 10))
+                .filter((value) => Number.isFinite(value))
+                .join(",");
+
+            titleState.textContent = active ? "| Live Now" : "| Paused";
+            timer.setAttribute("data-countdown", String(seconds));
+            const timerLabel = timer.querySelector("span");
+            if (timerLabel) {
+                timerLabel.textContent = payload.time_label || "00h : 00m : 00s";
+            }
+
+            const changed = active !== lastActive || incomingSignature !== lastItemSignature;
+            lastActive = active;
+            lastItemSignature = incomingSignature;
+
+            if (changed) {
+                window.location.reload();
+            }
+        } catch (error) {
+            // Ignore polling errors and try again on the next tick.
+        } finally {
+            polling = false;
+        }
+    };
+
+    const flashSyncIntervalMs = 6 * 60 * 60 * 1000;
+    setInterval(syncFromState, flashSyncIntervalMs);
+
+    document.addEventListener("visibilitychange", () => {
+        if (document.visibilityState === "visible") {
+            syncFromState();
+        }
+    });
+
+    window.addEventListener("focus", syncFromState);
+
+    // Force one state sync when the local timer reaches zero.
+    setInterval(() => {
+        const remaining = parseInt(timer.getAttribute("data-countdown"), 10);
+        if (Number.isFinite(remaining) && remaining <= 0 && !zeroSynced) {
+            zeroSynced = true;
+            syncFromState();
+        } else if (Number.isFinite(remaining) && remaining > 0) {
+            zeroSynced = false;
+        }
+    }, 1000);
+
+    syncFromState();
 }
 
 if (typeof window.jQuery !== "undefined") {
@@ -41,9 +153,13 @@ if (typeof window.jQuery !== "undefined") {
             });
         }
         initFlashTimers();
+        initFlashSalesAutoRefresh();
     });
 } else {
-    document.addEventListener("DOMContentLoaded", initFlashTimers);
+    document.addEventListener("DOMContentLoaded", () => {
+        initFlashTimers();
+        initFlashSalesAutoRefresh();
+    });
 }
 
 function applyCsrfToForms() {

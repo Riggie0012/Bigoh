@@ -203,7 +203,7 @@
      {% endif %}
 
     <br>
-    <section class="flash-sale-wrap" id="flash-sales">
+    <section class="flash-sale-wrap" id="flash-sales" data-flash-state-url="{{ url_for('flash_sales_state_api') }}">
       {% set flash_active = flash_sale_active if flash_sale_active is defined else false %}
       {% set flash_seconds = flash_sale_seconds if flash_sale_seconds is defined else 0 %}
       {% set flash_label = flash_sale_time_label if flash_sale_time_label is defined else "00h : 00m : 00s" %}
