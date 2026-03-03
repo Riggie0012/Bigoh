@@ -6999,6 +6999,9 @@ def pay_on_delivery():
     if not location:
         # return back with a query flag (simple)
         return redirect((request.referrer or url_for("cart")) + "?err=location")
+    whatsapp_action = request.form.get("whatsapp_action", "manual").strip().lower()
+    if whatsapp_action not in {"proceed", "skip", "manual"}:
+        whatsapp_action = "manual"
 
     # 3) Start from cart in session
     cart = session.get("cart", {}).copy()
@@ -7248,6 +7251,7 @@ def pay_on_delivery():
     wa_url = f"https://wa.me/{whatsapp_number}?text={quote(text)}"
     session["last_order_id"] = order_id
     session["last_wa_url"] = wa_url
+    session["auto_open_whatsapp"] = whatsapp_action == "proceed"
     return redirect(url_for("order_confirmation", order_id=order_id))
 
 
@@ -7623,6 +7627,7 @@ def order_confirmation(order_id):
             reference = order[ref_idx]
 
     wa_url = session.get("last_wa_url")
+    auto_open_whatsapp = bool(session.pop("auto_open_whatsapp", False))
     customer_name = session.get("username") or (order[1] if order else "Customer")
     issued_at = datetime.now()
     qr_payload = f"INVOICE|{reference}|ORDER:{order_id}|TOTAL:{float(order[5] or 0):.2f}|DATE:{issued_at.strftime('%Y-%m-%d')}"
@@ -7636,6 +7641,7 @@ def order_confirmation(order_id):
         items=items,
         reference=reference,
         wa_url=wa_url,
+        auto_open_whatsapp=auto_open_whatsapp,
         issued_at=issued_at,
         qr_data_uri=qr_data_uri,
         scu_info=scu_info,

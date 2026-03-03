@@ -360,8 +360,9 @@
           <div class="alert alert-danger py-2">Please enter delivery location.</div>
           {% endif %}
 
-          <form method="POST" action="{{ url_for('pay_on_delivery') }}" class="form-card p-3">
+          <form id="payOnDeliveryForm" method="POST" action="{{ url_for('pay_on_delivery') }}" class="form-card p-3">
             <input type="hidden" name="product_id" value="{{ product[0] }}">
+            <input type="hidden" name="whatsapp_action" id="payOnDeliveryAction" value="manual">
             {% if is_jersey_product and (color_options or size_options) %}
             <div class="row g-2">
               {% if color_options %}
@@ -398,6 +399,24 @@
             <input type="text" name="location" class="form-control" placeholder="e.g., Nairobi CBD, OTC stage..." required>
             <button type="submit" class="btn btn-dark w-100 mt-3">Pay on Delivery (WhatsApp)</button>
           </form>
+
+          <div class="modal fade" id="payOnDeliveryPrompt" tabindex="-1" aria-labelledby="payOnDeliveryPromptLabel" aria-hidden="true">
+            <div class="modal-dialog modal-dialog-centered">
+              <div class="modal-content">
+                <div class="modal-header">
+                  <h5 class="modal-title" id="payOnDeliveryPromptLabel">Continue to WhatsApp?</h5>
+                  <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                  After placing this order, do you want to proceed to WhatsApp or skip for now?
+                </div>
+                <div class="modal-footer">
+                  <button type="button" class="btn btn-outline-secondary" id="payOnDeliverySkip">Skip</button>
+                  <button type="button" class="btn btn-success" id="payOnDeliveryProceed">Proceed to WhatsApp</button>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </section>
@@ -520,4 +539,47 @@
 
   </div>
 </div>
+{% endblock %}
+{% block extra_scripts %}
+<script>
+  (function () {
+    var form = document.getElementById("payOnDeliveryForm");
+    var actionInput = document.getElementById("payOnDeliveryAction");
+    var modalElement = document.getElementById("payOnDeliveryPrompt");
+    var proceedButton = document.getElementById("payOnDeliveryProceed");
+    var skipButton = document.getElementById("payOnDeliverySkip");
+    if (!form || !actionInput || !modalElement || !proceedButton || !skipButton || typeof bootstrap === "undefined") {
+      return;
+    }
+
+    var modal = new bootstrap.Modal(modalElement);
+    var submitConfirmed = false;
+
+    form.addEventListener("submit", function (event) {
+      if (submitConfirmed) {
+        return;
+      }
+      if (!form.checkValidity()) {
+        return;
+      }
+      event.preventDefault();
+      modal.show();
+    });
+
+    var submitWithAction = function (action) {
+      actionInput.value = action;
+      submitConfirmed = true;
+      modal.hide();
+      form.submit();
+    };
+
+    proceedButton.addEventListener("click", function () {
+      submitWithAction("proceed");
+    });
+
+    skipButton.addEventListener("click", function () {
+      submitWithAction("skip");
+    });
+  })();
+</script>
 {% endblock %}

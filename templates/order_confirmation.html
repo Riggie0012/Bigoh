@@ -382,6 +382,11 @@
     if (params.get("print") === "1") {
       window.print();
     }
+    var autoOpenWhatsApp = {{ (auto_open_whatsapp and wa_url)|tojson }};
+    var waUrl = {{ wa_url|tojson }};
+    if (params.get("print") !== "1" && autoOpenWhatsApp && waUrl) {
+      window.open(waUrl, "_blank", "noopener");
+    }
   })();
 </script>
 {% endblock %}
