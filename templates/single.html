@@ -400,6 +400,23 @@
             <button type="submit" class="btn btn-dark w-100 mt-3">Pay on Delivery (WhatsApp)</button>
           </form>
 
+          <div class="modal fade" id="payOnDeliveryPrompt" tabindex="-1" aria-labelledby="payOnDeliveryPromptLabel" aria-hidden="true">
+            <div class="modal-dialog modal-dialog-centered">
+              <div class="modal-content">
+                <div class="modal-header">
+                  <h5 class="modal-title" id="payOnDeliveryPromptLabel">Continue to WhatsApp?</h5>
+                  <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                  After placing this order, do you want to proceed to WhatsApp or skip for now?
+                </div>
+                <div class="modal-footer">
+                  <button type="button" class="btn btn-outline-secondary" id="payOnDeliverySkip">Skip</button>
+                  <button type="button" class="btn btn-success" id="payOnDeliveryProceed">Proceed to WhatsApp</button>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </section>
@@ -528,20 +545,67 @@
   (function () {
     var form = document.getElementById("payOnDeliveryForm");
     var actionInput = document.getElementById("payOnDeliveryAction");
-    if (!form || !actionInput) {
+    var modalElement = document.getElementById("payOnDeliveryPrompt");
+    var proceedButton = document.getElementById("payOnDeliveryProceed");
+    var skipButton = document.getElementById("payOnDeliverySkip");
+    if (!form || !actionInput || !modalElement || !proceedButton || !skipButton || typeof bootstrap === "undefined") {
       return;
     }
 
+    var modal = new bootstrap.Modal(modalElement);
+    var submitConfirmed = false;
+
     form.addEventListener("submit", function (event) {
+      if (submitConfirmed) {
+        return;
+      }
       if (!form.checkValidity()) {
         return;
       }
       event.preventDefault();
-      var proceed = window.confirm(
-        "After placing this order, do you want to proceed to WhatsApp?\n\nPress OK to proceed, or Cancel to skip for now."
-      );
-      actionInput.value = proceed ? "proceed" : "skip";
-      form.submit();
+      modal.show();
+    });
+
+    var clearModalState = function () {
+      document.body.classList.remove("modal-open");
+      document.body.style.removeProperty("padding-right");
+      var backdrops = document.querySelectorAll(".modal-backdrop");
+      backdrops.forEach(function (backdrop) {
+        backdrop.remove();
+      });
+    };
+
+    var submitWithAction = function (action) {
+      actionInput.value = action;
+      submitConfirmed = true;
+      var submitted = false;
+      var doSubmit = function () {
+        if (submitted) {
+          return;
+        }
+        submitted = true;
+        form.submit();
+      };
+
+      modalElement.addEventListener("hidden.bs.modal", doSubmit, { once: true });
+      modal.hide();
+
+      // Fallback for browsers/extensions where hidden.bs.modal may not fire reliably.
+      setTimeout(function () {
+        if (submitted) {
+          return;
+        }
+        clearModalState();
+        doSubmit();
+      }, 500);
+    };
+
+    proceedButton.addEventListener("click", function () {
+      submitWithAction("proceed");
+    });
+
+    skipButton.addEventListener("click", function () {
+      submitWithAction("skip");
     });
   })();
 </script>
