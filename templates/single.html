@@ -566,11 +566,38 @@
       modal.show();
     });
 
+    var clearModalState = function () {
+      document.body.classList.remove("modal-open");
+      document.body.style.removeProperty("padding-right");
+      var backdrops = document.querySelectorAll(".modal-backdrop");
+      backdrops.forEach(function (backdrop) {
+        backdrop.remove();
+      });
+    };
+
     var submitWithAction = function (action) {
       actionInput.value = action;
       submitConfirmed = true;
+      var submitted = false;
+      var doSubmit = function () {
+        if (submitted) {
+          return;
+        }
+        submitted = true;
+        form.submit();
+      };
+
+      modalElement.addEventListener("hidden.bs.modal", doSubmit, { once: true });
       modal.hide();
-      form.submit();
+
+      // Fallback for browsers/extensions where hidden.bs.modal may not fire reliably.
+      setTimeout(function () {
+        if (submitted) {
+          return;
+        }
+        clearModalState();
+        doSubmit();
+      }, 500);
     };
 
     proceedButton.addEventListener("click", function () {
