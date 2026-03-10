@@ -143,6 +143,13 @@ REVIEW_IMAGE_QUALITY = int(os.getenv("REVIEW_IMAGE_QUALITY", "80"))
 PRODUCT_MAX_IMAGE_BYTES = int(os.getenv("PRODUCT_MAX_IMAGE_BYTES", "2500000"))
 PRODUCT_MAX_IMAGE_PX = int(os.getenv("PRODUCT_MAX_IMAGE_PX", "1600"))
 PRODUCT_IMAGE_QUALITY = int(os.getenv("PRODUCT_IMAGE_QUALITY", "82"))
+BROWSER_CACHE_TTL_SECONDS = int(os.getenv("BROWSER_CACHE_TTL_SECONDS", "86400"))
+BROWSER_CACHE_TTL_SECONDS = max(0, BROWSER_CACHE_TTL_SECONDS)
+CACHE_CONTROL_STATIC = (
+    f"public, max-age={BROWSER_CACHE_TTL_SECONDS}"
+    if BROWSER_CACHE_TTL_SECONDS > 0
+    else "no-store"
+)
 
 
 def _safe_float_env(name: str, default: float) -> float:
@@ -1194,12 +1201,17 @@ def add_cache_headers(response):
     if request.path.startswith("/static/"):
         response.headers.setdefault(
             "Cache-Control",
-            "public, max-age=31536000, immutable",
+            CACHE_CONTROL_STATIC,
         )
     if request.path.startswith("/uploads/"):
         response.headers.setdefault(
             "Cache-Control",
-            "public, max-age=31536000, immutable",
+            CACHE_CONTROL_STATIC,
+        )
+    if request.path == "/favicon.ico":
+        response.headers.setdefault(
+            "Cache-Control",
+            CACHE_CONTROL_STATIC,
         )
     return response
 
